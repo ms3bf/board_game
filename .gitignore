@@ -1,0 +1,9 @@
+/*
+!/.gitignore
+!/LICENSE
+!/README.md
+!/gui/
+!/gui/**
+
+gui/__pycache__/
+gui/*.py[cod]
