@@ -161,6 +161,19 @@ class BoardGameHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/logo-white.png":
+            logo_path = Path(__file__).resolve().parent.parent / "logo-white.png"
+            if not logo_path.exists():
+                self.send_error(HTTPStatus.NOT_FOUND, "logo not found")
+                return
+            body = logo_path.read_bytes()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if parsed.path.startswith("/voice/"):
             rel_path = parsed.path.removeprefix("/voice/")
             voice_roots = [

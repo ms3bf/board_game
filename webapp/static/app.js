@@ -48,6 +48,7 @@ const els = {
   sumReal: document.getElementById("sum-real"),
   sumUnreal: document.getElementById("sum-unreal"),
   sumEquity: document.getElementById("sum-equity"),
+  shareXBtn: document.getElementById("share-x-btn"),
 };
 
 const soundPaths = {
@@ -345,6 +346,13 @@ function formatInt(value) {
   return Number(value).toLocaleString("ja-JP");
 }
 
+function formatSignedYen(value) {
+  return Number(value).toLocaleString("ja-JP", {
+    signDisplay: "always",
+    maximumFractionDigits: 0,
+  });
+}
+
 function upperBound(arr, target) {
   let lo = 0;
   let hi = arr.length;
@@ -625,6 +633,29 @@ function renderBoard(frame, highlightPrice) {
     `);
   }
   els.boardBody.innerHTML = rows.join("");
+}
+
+function shareTextFromSnapshot() {
+  const delta = Math.round(engine.cash - engine.initialCash);
+  const firstLine = delta >= 0
+    ? `デモトレで ${formatSignedYen(delta)}円得しました！`
+    : `デモトレで ${formatSignedYen(delta)}円でした！`;
+  return `${firstLine}\n遊んでみる`;
+}
+
+async function shareToX() {
+  if (!state.session) return;
+  const text = shareTextFromSnapshot();
+  const shareUrl = window.location.href;
+  const intent = new URL("https://twitter.com/intent/tweet");
+  intent.searchParams.set("text", text);
+  intent.searchParams.set("url", shareUrl);
+  const popup = window.open(intent.toString(), "_blank");
+  if (!popup) {
+    window.location.href = intent.toString();
+    return;
+  }
+  popup.opener = null;
 }
 
 async function renderTrades() {
@@ -911,6 +942,14 @@ function bindEvents() {
   els.cancelOrdersBtn.addEventListener("click", () => {
     engine.cancelAll();
     updateView();
+  });
+  els.shareXBtn?.addEventListener("click", async () => {
+    try {
+      await shareToX();
+    } catch (error) {
+      console.error(error);
+      showError(`Share failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   });
   els.chartLine?.addEventListener("click", () => {
     state.chartMode = state.chartMode === "line" ? "candle" : "line";

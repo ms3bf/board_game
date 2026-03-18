@@ -18,9 +18,14 @@
         <section class="quote-strip">
           <div class="quote-main">
             <div class="quote-price-row">
-              <strong id="headline-cash" class="quote-price">-</strong>
-              <span class="quote-delta">JPY</span>
-              <span class="live-pill">LIVE</span>
+              <div class="quote-value-block">
+                <strong id="headline-cash" class="quote-price">-</strong>
+                <span class="quote-delta">JPY</span>
+                <span class="live-pill">LIVE</span>
+              </div>
+              <button id="share-x-btn" class="share-x-button" type="button" aria-label="Xで共有">
+                <img src="/logo-white.png" alt="X">
+              </button>
             </div>
             <div class="quote-meta-row">
               <span id="meta-time">--:--:--</span>
@@ -49,7 +54,7 @@
               <section id="board-panel" class="view-panel">
                 <div class="board-head">
                   <div class="board-mode">24H Live Board</div>
-                  <div class="board-mode-side">現在時刻以下の最新状態を表示</div>
+                  <div class="board-mode-side">買数量/売数量をタップで発注</div>
                 </div>
                 <div class="board-wrap">
                   <table class="board-table">
@@ -94,10 +99,10 @@
                   <table class="data-table">
                     <thead>
                       <tr>
-                        <th>Time</th>
-                        <th>Price</th>
-                        <th>Size</th>
-                        <th>Side</th>
+                        <th>時刻</th>
+                        <th>価格</th>
+                        <th>数量</th>
+                        <th>売買</th>
                       </tr>
                     </thead>
                     <tbody id="trades-body"></tbody>
@@ -133,7 +138,7 @@
                   <tr>
                     <th>ID</th>
                     <th>売買</th>
-                    <th>指値</th>
+                    <th>価格</th>
                     <th>時刻</th>
                   </tr>
                 </thead>
@@ -156,7 +161,7 @@
                     <th>理由</th>
                     <th>建玉</th>
                     <th>平均</th>
-                    <th>差額</th>
+                    <th>増減</th>
                     <th>累計</th>
                   </tr>
                 </thead>
@@ -168,7 +173,7 @@
 
         <section class="empty-state hidden" id="empty-state">
           <h2>No parquet found</h2>
-          <p>24時間板の parquet をこのディレクトリに置くと自動で候補に出ます。</p>
+          <p>24時間の板 parquet をこのディレクトリに置くと自動で表示します。</p>
         </section>
       </main>
     </div>

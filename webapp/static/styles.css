@@ -136,10 +136,26 @@ body {
 
 .quote-price-row {
   gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.quote-value-block {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .quote-price {
   font: 800 clamp(1.45rem, 7vw, 2rem)/1 var(--mono);
+}
+
+.quote-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
 }
 
 .quote-price.profit {
@@ -166,6 +182,26 @@ body {
   color: var(--brand);
   font: 800 0.62rem/1 var(--mono);
   letter-spacing: 0.08em;
+}
+
+.share-x-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(143, 179, 191, 0.22);
+  border-radius: 12px;
+  background: rgba(16, 35, 45, 0.92);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.share-x-button img {
+  width: 14px;
+  height: 14px;
+  display: block;
 }
 
 .quote-meta-row {

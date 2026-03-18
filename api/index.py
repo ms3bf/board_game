@@ -20,6 +20,7 @@ LOCAL_DATA_DIR = APP_ROOT
 CACHE_DIR = Path(os.environ.get("BOARD_GAME_CACHE_DIR", "/tmp/board-game-data"))
 BOARD_FILE_NAME = "demo_trade.parquet"
 CHART_FILE_NAME = "demo_trade.chart.parquet"
+LOGO_PATH = APP_ROOT / "logo-white.png"
 
 app = Flask(__name__)
 
@@ -138,6 +139,11 @@ def app_js():
 @app.get("/styles.css")
 def styles_css():
     return send_file(STATIC_DIR / "styles.css", mimetype="text/css")
+
+
+@app.get("/logo-white.png")
+def logo_png():
+    return send_file(LOGO_PATH, mimetype="image/png")
 
 
 @app.get("/voice/<path:filename>")
