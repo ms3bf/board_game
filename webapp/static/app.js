@@ -11,7 +11,7 @@ const state = {
   lastRealTime: 0,
   playTimerId: null,
   playTickBusy: false,
-  playbackStepMicro: 1_000_000,
+  playbackStepMicro: 500_000,
   chartVisible: true,
   tradesVisible: true,
   tradingVisible: true,
@@ -778,7 +778,7 @@ function startPlayback() {
       console.error(error);
       stopPlayback();
     });
-  }, 1000);
+  }, 500);
 }
 
 function stopPlayback() {
