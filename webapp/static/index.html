@@ -2,170 +2,144 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Board Game Web</title>
     <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
     <div class="app-shell">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">Board Replay Web</p>
-          <h1>Order Book Player</h1>
-          <p class="hero-copy">日替わり parquet をそのまま載せて再生できる、板読みゲーム用の Web プレイヤーです。</p>
-        </div>
-        <div class="hero-meta">
-          <div class="meta-card">
-            <span class="meta-label">Current File</span>
-            <strong id="meta-file">-</strong>
+      <header class="app-header">
+        <div class="header-top">
+          <div class="brand-block">
+            <p class="brand-label">Board Replay</p>
+            <strong id="meta-file" class="brand-file">-</strong>
           </div>
-          <div class="meta-card">
-            <span class="meta-label">Current Time</span>
-            <strong id="meta-time">--:--:--</strong>
-          </div>
-          <div class="meta-card">
-            <span class="meta-label">Index</span>
-            <strong id="meta-index">0 / 0</strong>
-          </div>
-        </div>
-      </header>
-
-      <main class="dashboard">
-        <section class="panel control-panel">
-          <div class="panel-header">
-            <div>
-              <p class="panel-kicker">Playback</p>
-              <h2>Session Control</h2>
-            </div>
-            <div class="toggle-group">
-              <button id="show-board" class="toggle-button active" type="button">Board</button>
-              <button id="show-chart" class="toggle-button" type="button">Chart</button>
-              <button id="show-trades" class="toggle-button" type="button">Trades</button>
-            </div>
-          </div>
-
-          <div class="control-grid">
-            <label class="field">
-              <span>Replay File</span>
+          <div class="header-actions">
+            <label class="file-picker">
+              <span>Replay</span>
               <select id="file-select"></select>
             </label>
-            <div class="status-strip">
-              <div class="status-chip">
-                <span>Best Bid</span>
-                <strong id="best-bid">-</strong>
-              </div>
-              <div class="status-chip">
-                <span>Best Ask</span>
-                <strong id="best-ask">-</strong>
-              </div>
-              <div class="status-chip">
-                <span>Last Trade</span>
-                <strong id="last-trade">-</strong>
-              </div>
-              <div class="status-chip">
-                <span>Speed</span>
-                <strong id="speed-label">x1</strong>
-              </div>
+          </div>
+        </div>
+
+        <section class="quote-strip">
+          <div class="quote-main">
+            <div class="quote-price-row">
+              <strong id="last-trade" class="quote-price">-</strong>
+              <span class="quote-delta">JPY</span>
+            </div>
+            <div class="quote-meta-row">
+              <span id="meta-time">--:--:--</span>
+              <span id="meta-index">0 / 0</span>
             </div>
           </div>
-
-          <div class="seek-wrap">
-            <input id="seek-slider" type="range" min="0" max="0" value="0" step="1">
-          </div>
-
-          <div class="control-row">
-            <button id="back-btn" class="action-button secondary" type="button">Back</button>
-            <button id="play-btn" class="action-button primary" type="button">Play</button>
-            <button id="forward-btn" class="action-button secondary" type="button">Forward</button>
-            <button id="speed-btn" class="action-button accent" type="button">x5</button>
-            <button id="audio-btn" class="action-button ghost" type="button">Audio On</button>
+          <div class="quote-side">
+            <div class="quote-box">
+              <span>Best Ask</span>
+              <strong id="best-ask">-</strong>
+            </div>
+            <div class="quote-box">
+              <span>Best Bid</span>
+              <strong id="best-bid">-</strong>
+            </div>
           </div>
         </section>
 
-        <section id="board-panel" class="board-stage panel">
-          <div class="panel-header">
-            <div>
-              <p class="panel-kicker">Board</p>
-              <h2>Top 10 x 2 Levels</h2>
-            </div>
-            <p class="panel-note">Ask quantity を押すと SELL、Bid quantity を押すと BUY。best を跨ぐ価格ならその場で最良気配約定です。</p>
-          </div>
+        <nav class="section-tabs">
+          <button id="show-board" class="section-tab active" type="button">板</button>
+          <button id="show-chart" class="section-tab" type="button">チャート</button>
+          <button id="show-trades" class="section-tab" type="button">歩み値</button>
+        </nav>
+      </header>
 
-          <div class="manual-order-bar">
-            <label class="field compact-field">
+      <main class="app-main">
+        <section id="error-banner" class="error-banner hidden"></section>
+
+        <section class="replay-bar">
+          <div class="seek-wrap">
+            <input id="seek-slider" type="range" min="0" max="0" value="0" step="1">
+          </div>
+          <div class="control-row">
+            <button id="back-btn" class="chip-button" type="button">Back</button>
+            <button id="play-btn" class="action-button primary" type="button">Play</button>
+            <button id="forward-btn" class="chip-button" type="button">Forward</button>
+            <button id="speed-btn" class="chip-button accent" type="button">x5</button>
+            <button id="audio-btn" class="chip-button" type="button">Audio</button>
+          </div>
+        </section>
+
+        <section class="viewport-shell">
+          <div id="section-viewport" class="section-viewport">
+            <div id="section-track" class="section-track">
+              <section id="board-panel" class="view-panel">
+                <div class="board-head">
+                  <div class="board-mode">複数気配</div>
+                  <div class="board-mode-side">最良気配基準の即時約定対応</div>
+                </div>
+                <div class="board-wrap">
+                  <table class="board-table">
+                    <thead>
+                      <tr>
+                        <th>AskO</th>
+                        <th>AskQ</th>
+                        <th>Price</th>
+                        <th>BidQ</th>
+                        <th>BidO</th>
+                      </tr>
+                    </thead>
+                    <tbody id="board-body"></tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section id="chart-panel" class="view-panel">
+                <canvas id="chart-canvas" width="1000" height="560"></canvas>
+              </section>
+
+              <section id="trades-panel" class="view-panel">
+                <div class="table-wrap trades-wrap">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>Price</th>
+                        <th>Size</th>
+                        <th>Side</th>
+                      </tr>
+                    </thead>
+                    <tbody id="trades-body"></tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section class="order-dock">
+          <div class="order-grid">
+            <label class="compact-field">
               <span>Side</span>
               <select id="order-side">
                 <option value="BUY">BUY</option>
                 <option value="SELL">SELL</option>
               </select>
             </label>
-            <label class="field compact-field">
-              <span>Limit Price</span>
+            <label class="compact-field">
+              <span>Limit</span>
               <input id="order-price" type="number" min="0" step="1" inputmode="numeric">
             </label>
-            <button id="place-limit-btn" class="action-button primary" type="button">Place Limit</button>
-            <button id="cross-buy-btn" class="action-button secondary" type="button">Cross Buy</button>
-            <button id="cross-sell-btn" class="action-button secondary" type="button">Cross Sell</button>
-          </div>
-
-          <div class="board-wrap">
-            <table class="board-table">
-              <thead>
-                <tr>
-                  <th>AskO</th>
-                  <th>AskQ</th>
-                  <th>Price</th>
-                  <th>BidQ</th>
-                  <th>BidO</th>
-                </tr>
-              </thead>
-              <tbody id="board-body"></tbody>
-            </table>
+            <button id="place-limit-btn" class="action-button secondary" type="button">Place</button>
+            <button id="cross-buy-btn" class="action-button positive" type="button">Cross Buy</button>
+            <button id="cross-sell-btn" class="action-button negative" type="button">Cross Sell</button>
           </div>
         </section>
 
-        <section id="chart-panel" class="panel chart-panel hidden">
-          <div class="panel-header">
-            <div>
-              <p class="panel-kicker">Chart</p>
-              <h2>Trade Timeline</h2>
-            </div>
-            <p class="panel-note">クリックまたはドラッグでシーク</p>
-          </div>
-          <canvas id="chart-canvas" width="1000" height="280"></canvas>
-        </section>
-
-        <section id="trades-panel" class="panel list-panel hidden">
-          <div class="panel-header">
-            <div>
-              <p class="panel-kicker">Trades</p>
-              <h2>Recent Executions</h2>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Price</th>
-                  <th>Size</th>
-                  <th>Side</th>
-                </tr>
-              </thead>
-              <tbody id="trades-body"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <section id="trading-panel" class="panel trading-panel">
-          <div class="panel-header">
-            <div>
-              <p class="panel-kicker">Trading</p>
-              <h2>Simulation</h2>
-            </div>
-            <div class="control-row compact">
-              <button id="cancel-orders-btn" class="action-button secondary" type="button">Cancel All</button>
-              <button id="reset-account-btn" class="action-button secondary" type="button">Reset Account</button>
+        <section id="trading-panel" class="trading-sheet">
+          <div class="sheet-head">
+            <strong>Trading</strong>
+            <div class="sheet-actions">
+              <button id="cancel-orders-btn" class="chip-button" type="button">Cancel All</button>
+              <button id="reset-account-btn" class="chip-button" type="button">Reset</button>
             </div>
           </div>
 
@@ -178,51 +152,54 @@
             <div class="summary-card"><span>Equity</span><strong id="sum-equity">-</strong></div>
           </div>
 
-          <div class="subpanel-grid">
-            <div class="subpanel">
-              <h3>Pending Orders</h3>
-              <div class="table-wrap">
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th>ID</th>
-                      <th>Side</th>
-                      <th>Limit</th>
-                      <th>Placed</th>
-                    </tr>
-                  </thead>
-                  <tbody id="pending-body"></tbody>
-                </table>
-              </div>
+          <details class="sheet-details">
+            <summary>Pending Orders</summary>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Side</th>
+                    <th>Limit</th>
+                    <th>Placed</th>
+                  </tr>
+                </thead>
+                <tbody id="pending-body"></tbody>
+              </table>
             </div>
-            <div class="subpanel">
-              <h3>Trade Log</h3>
-              <div class="table-wrap">
-                <table class="data-table dense">
-                  <thead>
-                    <tr>
-                      <th>Time</th>
-                      <th>Type</th>
-                      <th>Side</th>
-                      <th>Price</th>
-                      <th>Lot</th>
-                      <th>Reason</th>
-                      <th>Pos</th>
-                      <th>Avg</th>
-                      <th>dReal</th>
-                      <th>Realized</th>
-                    </tr>
-                  </thead>
-                  <tbody id="log-body"></tbody>
-                </table>
-              </div>
+          </details>
+
+          <details class="sheet-details">
+            <summary>Trade Log</summary>
+            <div class="table-wrap">
+              <table class="data-table dense">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Type</th>
+                    <th>Side</th>
+                    <th>Price</th>
+                    <th>Lot</th>
+                    <th>Reason</th>
+                    <th>Pos</th>
+                    <th>Avg</th>
+                    <th>dReal</th>
+                    <th>Realized</th>
+                  </tr>
+                </thead>
+                <tbody id="log-body"></tbody>
+              </table>
             </div>
-          </div>
+          </details>
+        </section>
+
+        <section class="micro-copy">
+          <p>板を最優先に表示し、必要な補助情報だけを下へ置く構成です。ビューは横スワイプでも切り替えられます。</p>
         </section>
 
         <section class="empty-state hidden" id="empty-state">
           <h2>No parquet found</h2>
-          <p>repo 直下か `--data-dir` に replay 用の `*.parquet` を置いてから再読み込みしてください。</p>
+          <p>`test.parquet` など replay 用の `*.parquet` を配置してから再読み込みしてください。</p>
         </section>
       </main>
     </div>

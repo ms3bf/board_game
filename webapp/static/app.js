@@ -17,6 +17,9 @@ const state = {
 };
 
 const els = {
+  appHeader: document.querySelector(".app-header"),
+  appMain: document.querySelector(".app-main"),
+  errorBanner: document.getElementById("error-banner"),
   fileSelect: document.getElementById("file-select"),
   playBtn: document.getElementById("play-btn"),
   backBtn: document.getElementById("back-btn"),
@@ -27,6 +30,8 @@ const els = {
   boardBody: document.getElementById("board-body"),
   boardPanel: document.getElementById("board-panel"),
   tradesBody: document.getElementById("trades-body"),
+  sectionViewport: document.getElementById("section-viewport"),
+  sectionTrack: document.getElementById("section-track"),
   pendingBody: document.getElementById("pending-body"),
   logBody: document.getElementById("log-body"),
   chartCanvas: document.getElementById("chart-canvas"),
@@ -309,6 +314,18 @@ function formatTime(timeMicro) {
   return `${hh}:${mm}:${ss}`;
 }
 
+function formatPlaybackTime(timeMicro) {
+  if (!timeMicro || timeMicro <= 0) {
+    return "--:--:--.0";
+  }
+  const totalSec = Math.floor(timeMicro / 1_000_000);
+  const hh = String(Math.floor(totalSec / 3600)).padStart(2, "0");
+  const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
+  const ss = String(totalSec % 60).padStart(2, "0");
+  const tenths = Math.floor((timeMicro % 1_000_000) / 100_000);
+  return `${hh}:${mm}:${ss}.${tenths}`;
+}
+
 function formatInt(value) {
   if (!value) {
     return "-";
@@ -353,6 +370,22 @@ function bestPrices(asks, bids) {
   };
 }
 
+function showError(message) {
+  if (!els.errorBanner) {
+    return;
+  }
+  els.errorBanner.textContent = message;
+  els.errorBanner.classList.remove("hidden");
+}
+
+function clearError() {
+  if (!els.errorBanner) {
+    return;
+  }
+  els.errorBanner.textContent = "";
+  els.errorBanner.classList.add("hidden");
+}
+
 async function fetchJson(url) {
   const response = await fetch(url);
   if (!response.ok) {
@@ -390,6 +423,7 @@ function buildPlaybackTimes(times) {
 }
 
 async function loadFiles() {
+  clearError();
   state.files = await fetchJson("/api/files");
   els.fileSelect.innerHTML = "";
   for (const file of state.files) {
@@ -401,7 +435,12 @@ async function loadFiles() {
 
   const hasFiles = state.files.length > 0;
   els.emptyState.classList.toggle("hidden", hasFiles);
-  document.querySelectorAll(".panel").forEach((panel) => panel.classList.toggle("hidden", !hasFiles));
+  if (els.appHeader) {
+    els.appHeader.classList.toggle("hidden", !hasFiles);
+  }
+  if (els.appMain) {
+    els.appMain.classList.toggle("hidden", !hasFiles);
+  }
   if (hasFiles) {
     await loadSession(state.files[0].name);
   }
@@ -409,6 +448,7 @@ async function loadFiles() {
 
 async function loadSession(filename) {
   stopPlayback();
+  clearError();
   const raw = await fetchJson(`/api/session-summary?file=${encodeURIComponent(filename)}`);
   state.session = preprocessSession(raw);
   state.currentFile = filename;
@@ -718,9 +758,12 @@ function renderChart() {
 }
 
 function updatePanels() {
-  els.boardPanel.classList.toggle("hidden", state.activeSection !== "board");
-  els.chartPanel.classList.toggle("hidden", state.activeSection !== "chart");
-  els.tradesPanel.classList.toggle("hidden", state.activeSection !== "trades");
+  const sectionOrder = ["board", "chart", "trades"];
+  const sectionIndex = Math.max(0, sectionOrder.indexOf(state.activeSection));
+  if (els.sectionTrack && els.sectionViewport) {
+    const offset = sectionIndex * els.sectionViewport.clientWidth;
+    els.sectionTrack.style.transform = `translateX(-${offset}px)`;
+  }
   els.showBoard.classList.toggle("active", state.activeSection === "board");
   els.showChart.classList.toggle("active", state.activeSection === "chart");
   els.showTrades.classList.toggle("active", state.activeSection === "trades");
@@ -733,7 +776,7 @@ function renderPlaybackMeta(bestBid = null, bestAsk = null) {
   }
   const displayTime = state.isPlaying ? state.virtualTime : session.playbackTimes[state.currentIndex];
   els.metaFile.textContent = session.name;
-  els.metaTime.textContent = formatTime(displayTime);
+  els.metaTime.textContent = formatPlaybackTime(displayTime);
   els.metaIndex.textContent = `${state.currentIndex} / ${session.maxIndex}`;
   if (bestBid !== null) {
     els.bestBid.textContent = bestBid ? formatInt(bestBid) : "-";
@@ -743,7 +786,12 @@ function renderPlaybackMeta(bestBid = null, bestAsk = null) {
   }
   const latestTrade = latestTradePriceUpTo(state.currentIndex);
   els.lastTrade.textContent = latestTrade ? formatInt(latestTrade) : "-";
-  els.speedLabel.textContent = state.playSpeed === 5 ? "x5" : "x1";
+  if (document.activeElement !== els.orderPrice && !els.orderPrice.value) {
+    els.orderPrice.placeholder = latestTrade ? String(latestTrade) : "";
+  }
+  if (els.speedLabel) {
+    els.speedLabel.textContent = state.playSpeed === 5 ? "x5" : "x1";
+  }
   els.seekSlider.value = String(state.currentIndex);
 }
 
@@ -974,16 +1022,47 @@ function bindEvents() {
     updatePanels();
   });
 
+  let swipeStartX = 0;
+  let swipeActive = false;
+  if (els.sectionViewport) {
+    els.sectionViewport.addEventListener("pointerdown", (event) => {
+      swipeStartX = event.clientX;
+      swipeActive = true;
+    });
+    els.sectionViewport.addEventListener("pointerup", (event) => {
+      if (!swipeActive) {
+        return;
+      }
+      const dx = event.clientX - swipeStartX;
+      if (Math.abs(dx) > 40) {
+        const sectionOrder = ["board", "chart", "trades"];
+        const current = Math.max(0, sectionOrder.indexOf(state.activeSection));
+        const next = dx < 0 ? Math.min(sectionOrder.length - 1, current + 1) : Math.max(0, current - 1);
+        state.activeSection = sectionOrder[next];
+        updatePanels();
+        if (state.activeSection === "chart") {
+          renderChart();
+        }
+      }
+      swipeActive = false;
+    });
+    els.sectionViewport.addEventListener("pointercancel", () => {
+      swipeActive = false;
+    });
+  }
+
   let draggingChart = false;
-  els.chartCanvas.addEventListener("pointerdown", (event) => {
-    draggingChart = true;
-    chartSeekFromEvent(event);
-  });
-  els.chartCanvas.addEventListener("pointermove", (event) => {
-    if (draggingChart) {
+  if (els.chartCanvas) {
+    els.chartCanvas.addEventListener("pointerdown", (event) => {
+      draggingChart = true;
       chartSeekFromEvent(event);
-    }
-  });
+    });
+    els.chartCanvas.addEventListener("pointermove", (event) => {
+      if (draggingChart) {
+        chartSeekFromEvent(event);
+      }
+    });
+  }
   window.addEventListener("pointerup", () => {
     draggingChart = false;
   });
@@ -1004,40 +1083,50 @@ function bindEvents() {
     }
   });
 
-  window.addEventListener("resize", renderChart);
+  window.addEventListener("resize", () => {
+    updatePanels();
+    renderChart();
+  });
 }
 
 async function updateView(highlightPrices = null) {
-  const session = state.session;
-  if (!session) {
-    return;
+  try {
+    const session = state.session;
+    if (!session) {
+      return;
+    }
+
+    await ensureChunkForIndex(state.currentIndex);
+    const frame = frameAt(state.currentIndex);
+    if (!frame) {
+      return;
+    }
+
+    const { bestBid, bestAsk } = bestPrices(frame.asks, frame.bids);
+    engine.onMarket({
+      timeMicro: session.playbackTimes[state.currentIndex],
+      bestBid,
+      bestAsk,
+      lastPrice: session.prices[state.currentIndex],
+      eventType: session.events[state.currentIndex],
+      tradePrice: session.prices[state.currentIndex],
+    });
+
+    const prices = highlightPrices ?? new Set(
+      session.events[state.currentIndex] === 2 ? [session.prices[state.currentIndex]] : []
+    );
+
+    renderBoard(frame, prices);
+    renderTrades();
+    renderTrading();
+    renderChart();
+    renderPlaybackMeta(bestBid, bestAsk);
+    clearError();
+  } catch (error) {
+    console.error(error);
+    showError(`Runtime error: ${error instanceof Error ? error.message : String(error)}`);
+    throw error;
   }
-
-  await ensureChunkForIndex(state.currentIndex);
-  const frame = frameAt(state.currentIndex);
-  if (!frame) {
-    return;
-  }
-
-  const { bestBid, bestAsk } = bestPrices(frame.asks, frame.bids);
-  engine.onMarket({
-    timeMicro: session.playbackTimes[state.currentIndex],
-    bestBid,
-    bestAsk,
-    lastPrice: session.prices[state.currentIndex],
-    eventType: session.events[state.currentIndex],
-    tradePrice: session.prices[state.currentIndex],
-  });
-
-  const prices = highlightPrices ?? new Set(
-    session.events[state.currentIndex] === 2 ? [session.prices[state.currentIndex]] : []
-  );
-
-  renderBoard(frame, prices);
-  renderTrades();
-  renderTrading();
-  renderChart();
-  renderPlaybackMeta(bestBid, bestAsk);
 }
 
 async function main() {
@@ -1047,12 +1136,8 @@ async function main() {
     await loadFiles();
   } catch (error) {
     console.error(error);
+    showError(`Failed to load app: ${error instanceof Error ? error.message : String(error)}`);
     els.emptyState.classList.remove("hidden");
-    els.emptyState.innerHTML = `
-      <h2>Failed to load app</h2>
-      <p>サーバが起動しているか、parquet の読み込みに必要な Python 依存が入っているか確認してください。</p>
-    `;
-    document.querySelectorAll(".panel").forEach((panel) => panel.classList.add("hidden"));
   }
 }
 
