@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Board Game Web</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Board Replay Web</p>
+          <h1>Order Book Player</h1>
+          <p class="hero-copy">日替わり parquet をそのまま載せて再生できる、板読みゲーム用の Web プレイヤーです。</p>
+        </div>
+        <div class="hero-meta">
+          <div class="meta-card">
+            <span class="meta-label">Current File</span>
+            <strong id="meta-file">-</strong>
+          </div>
+          <div class="meta-card">
+            <span class="meta-label">Current Time</span>
+            <strong id="meta-time">--:--:--</strong>
+          </div>
+          <div class="meta-card">
+            <span class="meta-label">Index</span>
+            <strong id="meta-index">0 / 0</strong>
+          </div>
+        </div>
+      </header>
+
+      <main class="dashboard">
+        <section class="panel control-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Playback</p>
+              <h2>Session Control</h2>
+            </div>
+            <div class="toggle-group">
+              <button id="toggle-chart" class="toggle-button active" type="button">Chart</button>
+              <button id="toggle-trades" class="toggle-button active" type="button">Trades</button>
+              <button id="toggle-trading" class="toggle-button active" type="button">Trading</button>
+            </div>
+          </div>
+
+          <div class="control-grid">
+            <label class="field">
+              <span>Replay File</span>
+              <select id="file-select"></select>
+            </label>
+            <div class="status-strip">
+              <div class="status-chip">
+                <span>Best Bid</span>
+                <strong id="best-bid">-</strong>
+              </div>
+              <div class="status-chip">
+                <span>Best Ask</span>
+                <strong id="best-ask">-</strong>
+              </div>
+              <div class="status-chip">
+                <span>Last Trade</span>
+                <strong id="last-trade">-</strong>
+              </div>
+              <div class="status-chip">
+                <span>Speed</span>
+                <strong id="speed-label">x1</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="seek-wrap">
+            <input id="seek-slider" type="range" min="0" max="0" value="0" step="1">
+          </div>
+
+          <div class="control-row">
+            <button id="back-btn" class="action-button secondary" type="button">Back</button>
+            <button id="play-btn" class="action-button primary" type="button">Play</button>
+            <button id="forward-btn" class="action-button secondary" type="button">Forward</button>
+            <button id="speed-btn" class="action-button accent" type="button">x5</button>
+            <button id="audio-btn" class="action-button ghost" type="button">Audio On</button>
+          </div>
+        </section>
+
+        <section class="board-stage panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Board</p>
+              <h2>Top 10 x 2 Levels</h2>
+            </div>
+            <p class="panel-note">Ask quantity を押すと BUY、Bid quantity を押すと SELL の指値を出します。</p>
+          </div>
+          <div class="board-wrap">
+            <table class="board-table">
+              <thead>
+                <tr>
+                  <th>AskO</th>
+                  <th>AskQ</th>
+                  <th>Price</th>
+                  <th>BidQ</th>
+                  <th>BidO</th>
+                </tr>
+              </thead>
+              <tbody id="board-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="chart-panel" class="panel chart-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Chart</p>
+              <h2>Trade Timeline</h2>
+            </div>
+            <p class="panel-note">クリックまたはドラッグでシーク</p>
+          </div>
+          <canvas id="chart-canvas" width="1000" height="280"></canvas>
+        </section>
+
+        <section id="trades-panel" class="panel list-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Trades</p>
+              <h2>Recent Executions</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Price</th>
+                  <th>Size</th>
+                  <th>Side</th>
+                </tr>
+              </thead>
+              <tbody id="trades-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="trading-panel" class="panel trading-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Trading</p>
+              <h2>Simulation</h2>
+            </div>
+            <div class="control-row compact">
+              <button id="cancel-orders-btn" class="action-button secondary" type="button">Cancel All</button>
+              <button id="reset-account-btn" class="action-button secondary" type="button">Reset Account</button>
+            </div>
+          </div>
+
+          <div class="summary-grid">
+            <div class="summary-card"><span>Cash</span><strong id="sum-cash">-</strong></div>
+            <div class="summary-card"><span>Position</span><strong id="sum-pos">-</strong></div>
+            <div class="summary-card"><span>Average</span><strong id="sum-avg">-</strong></div>
+            <div class="summary-card"><span>Realized</span><strong id="sum-real">-</strong></div>
+            <div class="summary-card"><span>Unrealized</span><strong id="sum-unreal">-</strong></div>
+            <div class="summary-card"><span>Equity</span><strong id="sum-equity">-</strong></div>
+          </div>
+
+          <div class="subpanel-grid">
+            <div class="subpanel">
+              <h3>Pending Orders</h3>
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Side</th>
+                      <th>Limit</th>
+                      <th>Placed</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pending-body"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="subpanel">
+              <h3>Trade Log</h3>
+              <div class="table-wrap">
+                <table class="data-table dense">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Type</th>
+                      <th>Side</th>
+                      <th>Price</th>
+                      <th>Lot</th>
+                      <th>Reason</th>
+                      <th>Pos</th>
+                      <th>Avg</th>
+                      <th>dReal</th>
+                      <th>Realized</th>
+                    </tr>
+                  </thead>
+                  <tbody id="log-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="empty-state hidden" id="empty-state">
+          <h2>No parquet found</h2>
+          <p>repo 直下か `--data-dir` に replay 用の `*.parquet` を置いてから再読み込みしてください。</p>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+  </html>

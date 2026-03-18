@@ -2,9 +2,20 @@
 !/.gitignore
 !/LICENSE
 !/README.md
+!/requirements.txt
+!/test.parquet
+!/vercel.json
+!/api/
+!/api/**
 !/gui/
 !/gui/**
+!/webapp/
+!/webapp/**
 gui/voice/
 
 gui/__pycache__/
 gui/*.py[cod]
+webapp/__pycache__/
+webapp/*.py[cod]
+api/__pycache__/
+api/*.py[cod]
