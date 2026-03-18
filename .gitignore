@@ -4,6 +4,7 @@
 !/README.md
 !/gui/
 !/gui/**
+gui/voice/
 
 gui/__pycache__/
 gui/*.py[cod]
