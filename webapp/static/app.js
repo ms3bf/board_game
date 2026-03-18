@@ -237,13 +237,13 @@ class TradingEngine {
       this.position
     );
     const nextPos = projectedPos + sideDelta;
-    if (projectedPos * sideDelta < 0 && Math.abs(nextPos) <= Math.abs(projectedPos)) {
+    if (Math.abs(nextPos) <= Math.abs(projectedPos)) {
       return true;
     }
 
     const referencePrice = Math.max(1, price, this.markPrice(), this.bestAsk, this.bestBid);
-    const requiredCash = referencePrice * this.lotSize;
-    return requiredCash <= Math.max(0, this.equity());
+    const totalExposure = Math.abs(nextPos) * referencePrice * this.lotSize;
+    return totalExposure <= Math.max(0, this.equity());
   }
 
   placeLimit(side, limitPrice, timeMicro) {
@@ -357,6 +357,11 @@ function formatSignedYen(value) {
     signDisplay: "always",
     maximumFractionDigits: 0,
   });
+}
+
+function formatShares(lots, lotSize = engine.lotSize) {
+  const shares = Number(lots || 0) * lotSize;
+  return `${formatInt(Math.abs(shares))}株`;
 }
 
 function upperBound(arr, target) {
@@ -642,7 +647,7 @@ function renderBoard(frame, highlightPrice) {
 }
 
 function shareTextFromSnapshot() {
-  const delta = Math.round(engine.cash - engine.initialCash);
+  const delta = Math.round(engine.equity() - engine.initialCash);
   const firstLine = delta >= 0
     ? `デモトレで ${formatSignedYen(delta)}円得しました！`
     : `デモトレで ${formatSignedYen(delta)}円でした！`;
@@ -679,7 +684,9 @@ async function renderTrades() {
 function renderTrading() {
   const snap = engine.snapshot();
   els.sumCash.textContent = `${formatInt(Math.round(snap.cash))} JPY`;
-  els.sumPos.textContent = `${snap.position} lot`;
+  els.sumPos.textContent = snap.position === 0
+    ? "0株"
+    : `${snap.position > 0 ? "買" : "売"} ${formatShares(snap.position)}`;
   els.sumAvg.textContent = snap.avgPrice ? snap.avgPrice.toFixed(1) : "-";
   els.sumReal.textContent = `${formatInt(Math.round(snap.realizedPnl))} JPY`;
   els.sumUnreal.textContent = `${formatInt(Math.round(snap.unrealizedPnl))} JPY`;
@@ -700,9 +707,9 @@ function renderTrading() {
       <td>${row.kind}</td>
       <td class="${row.side === "BUY" ? "buy" : row.side === "SELL" ? "sell" : ""}">${row.side === "BUY" ? "買" : row.side === "SELL" ? "売" : row.side}</td>
       <td>${row.price > 0 ? formatInt(row.price) : "-"}</td>
-      <td>${row.qtyLot > 0 ? row.qtyLot : "-"}</td>
+      <td>${row.qtyLot > 0 ? formatShares(row.qtyLot) : "-"}</td>
       <td>${row.reason}</td>
-      <td>${row.posAfter}</td>
+      <td>${row.posAfter === 0 ? "0株" : `${row.posAfter > 0 ? "買" : "売"} ${formatShares(row.posAfter)}`}</td>
       <td>${row.avgAfter > 0 ? row.avgAfter.toFixed(1) : "-"}</td>
       <td>${row.realizedDelta ? row.realizedDelta.toLocaleString("ja-JP", { signDisplay: "always", maximumFractionDigits: 0 }) : "0"}</td>
       <td>${formatInt(Math.round(row.realizedTotal))}</td>
