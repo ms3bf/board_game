@@ -11,6 +11,7 @@ const state = {
   lastRealTime: 0,
   playTimerId: null,
   playTickBusy: false,
+  playbackStepMicro: 1_000_000,
   chartVisible: true,
   tradesVisible: true,
   tradingVisible: true,
@@ -302,18 +303,6 @@ function formatTime(timeMicro) {
   const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
   const ss = String(totalSec % 60).padStart(2, "0");
   return `${hh}:${mm}:${ss}`;
-}
-
-function formatTimeWithMillis(timeMicro) {
-  if (!timeMicro || timeMicro <= 0) {
-    return "--:--:--.---";
-  }
-  const totalSec = Math.floor(timeMicro / 1_000_000);
-  const hh = String(Math.floor(totalSec / 3600)).padStart(2, "0");
-  const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
-  const ss = String(totalSec % 60).padStart(2, "0");
-  const ms = String(Math.floor((timeMicro % 1_000_000) / 1000)).padStart(3, "0");
-  return `${hh}:${mm}:${ss}.${ms}`;
 }
 
 function formatInt(value) {
@@ -740,7 +729,7 @@ function renderPlaybackMeta(bestBid = null, bestAsk = null) {
   }
   const displayTime = state.isPlaying ? state.virtualTime : session.playbackTimes[state.currentIndex];
   els.metaFile.textContent = session.name;
-  els.metaTime.textContent = formatTimeWithMillis(displayTime);
+  els.metaTime.textContent = formatTime(displayTime);
   els.metaIndex.textContent = `${state.currentIndex} / ${session.maxIndex}`;
   if (bestBid !== null) {
     els.bestBid.textContent = bestBid ? formatInt(bestBid) : "-";
@@ -760,14 +749,8 @@ async function tickPlayback() {
   }
   state.playTickBusy = true;
   try {
-    const now = performance.now();
-    if (!state.lastRealTime) {
-      state.lastRealTime = now;
-    }
-    const dt = now - state.lastRealTime;
-    state.lastRealTime = now;
     const prevIndex = state.currentIndex;
-    state.virtualTime += dt * 1000 * state.playSpeed;
+    state.virtualTime += state.playbackStepMicro * state.playSpeed;
     const hasMore = processUntilTime(state.virtualTime);
     if (prevIndex !== state.currentIndex) {
       await updateView(tradePricesInRange(prevIndex + 1, state.currentIndex));
@@ -788,7 +771,6 @@ function startPlayback() {
     return;
   }
   state.isPlaying = true;
-  state.lastRealTime = 0;
   state.playTickBusy = false;
   els.playBtn.textContent = "Stop";
   state.playTimerId = window.setInterval(() => {
@@ -796,12 +778,11 @@ function startPlayback() {
       console.error(error);
       stopPlayback();
     });
-  }, 33);
+  }, 1000);
 }
 
 function stopPlayback() {
   state.isPlaying = false;
-  state.lastRealTime = 0;
   if (state.playTimerId !== null) {
     window.clearInterval(state.playTimerId);
     state.playTimerId = null;
