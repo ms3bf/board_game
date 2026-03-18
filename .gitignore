@@ -3,7 +3,6 @@
 !/LICENSE
 !/README.md
 !/requirements.txt
-!/test.parquet
 !/vercel.json
 !/api/
 !/api/**

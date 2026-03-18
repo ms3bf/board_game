@@ -322,11 +322,11 @@ body {
 }
 
 .board-table .col-order {
-  width: 10%;
+  width: 13%;
 }
 
 .board-table .col-qty {
-  width: 20%;
+  width: 17%;
 }
 
 .board-table .col-price {
@@ -349,8 +349,9 @@ body {
   z-index: 1;
   background: #10212b;
   color: var(--muted);
-  font: 700 0.68rem/1 var(--mono);
+  font: 700 0.62rem/1 var(--sans);
   text-transform: uppercase;
+  letter-spacing: -0.02em;
 }
 
 .board-table td {
