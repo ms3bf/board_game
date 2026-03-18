@@ -66,10 +66,10 @@ const soundPriority = {
 };
 
 const soundVolumes = {
-  place: 0.08,
-  fill: 0.09,
-  profit: 0.1,
-  loss: 0.1,
+  place: 0.24,
+  fill: 0.28,
+  profit: 0.32,
+  loss: 0.32,
 };
 
 const soundPool = new Map();
@@ -231,13 +231,19 @@ class TradingEngine {
   }
 
   canPlace(side, price) {
+    const sideDelta = side === "BUY" ? 1 : -1;
+    const projectedPos = this.pending.reduce(
+      (pos, order) => pos + (order.side === "BUY" ? 1 : -1),
+      this.position
+    );
+    const nextPos = projectedPos + sideDelta;
+    if (projectedPos * sideDelta < 0 && Math.abs(nextPos) <= Math.abs(projectedPos)) {
+      return true;
+    }
+
     const referencePrice = Math.max(1, price, this.markPrice(), this.bestAsk, this.bestBid);
-    const pendingSameSide = this.pending.filter((order) => order.side === side).length;
-    const nextDirectionalLots = side === "BUY"
-      ? Math.max(0, this.position) + pendingSameSide + 1
-      : Math.max(0, -this.position) + pendingSameSide + 1;
-    const notional = nextDirectionalLots * referencePrice * this.lotSize;
-    return notional <= Math.max(0, this.cash);
+    const requiredCash = referencePrice * this.lotSize;
+    return requiredCash <= Math.max(0, this.equity());
   }
 
   placeLimit(side, limitPrice, timeMicro) {

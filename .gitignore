@@ -12,9 +12,6 @@
 !/webapp/
 !/webapp/**
 gui/voice/
-voice/
-webapp/voice/
-
 gui/__pycache__/
 gui/*.py[cod]
 webapp/__pycache__/
