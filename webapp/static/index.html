@@ -38,9 +38,9 @@
               <h2>Session Control</h2>
             </div>
             <div class="toggle-group">
-              <button id="toggle-chart" class="toggle-button active" type="button">Chart</button>
-              <button id="toggle-trades" class="toggle-button active" type="button">Trades</button>
-              <button id="toggle-trading" class="toggle-button active" type="button">Trading</button>
+              <button id="show-board" class="toggle-button active" type="button">Board</button>
+              <button id="show-chart" class="toggle-button" type="button">Chart</button>
+              <button id="show-trades" class="toggle-button" type="button">Trades</button>
             </div>
           </div>
 
@@ -82,14 +82,32 @@
           </div>
         </section>
 
-        <section class="board-stage panel">
+        <section id="board-panel" class="board-stage panel">
           <div class="panel-header">
             <div>
               <p class="panel-kicker">Board</p>
               <h2>Top 10 x 2 Levels</h2>
             </div>
-            <p class="panel-note">Ask quantity を押すと SELL、Bid quantity を押すと BUY の指値を出します。</p>
+            <p class="panel-note">Ask quantity を押すと SELL、Bid quantity を押すと BUY。best を跨ぐ価格ならその場で最良気配約定です。</p>
           </div>
+
+          <div class="manual-order-bar">
+            <label class="field compact-field">
+              <span>Side</span>
+              <select id="order-side">
+                <option value="BUY">BUY</option>
+                <option value="SELL">SELL</option>
+              </select>
+            </label>
+            <label class="field compact-field">
+              <span>Limit Price</span>
+              <input id="order-price" type="number" min="0" step="1" inputmode="numeric">
+            </label>
+            <button id="place-limit-btn" class="action-button primary" type="button">Place Limit</button>
+            <button id="cross-buy-btn" class="action-button secondary" type="button">Cross Buy</button>
+            <button id="cross-sell-btn" class="action-button secondary" type="button">Cross Sell</button>
+          </div>
+
           <div class="board-wrap">
             <table class="board-table">
               <thead>
@@ -106,7 +124,7 @@
           </div>
         </section>
 
-        <section id="chart-panel" class="panel chart-panel">
+        <section id="chart-panel" class="panel chart-panel hidden">
           <div class="panel-header">
             <div>
               <p class="panel-kicker">Chart</p>
@@ -117,7 +135,7 @@
           <canvas id="chart-canvas" width="1000" height="280"></canvas>
         </section>
 
-        <section id="trades-panel" class="panel list-panel">
+        <section id="trades-panel" class="panel list-panel hidden">
           <div class="panel-header">
             <div>
               <p class="panel-kicker">Trades</p>

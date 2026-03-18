@@ -12,9 +12,7 @@ const state = {
   playTimerId: null,
   playTickBusy: false,
   playbackStepMicro: 500_000,
-  chartVisible: true,
-  tradesVisible: true,
-  tradingVisible: true,
+  activeSection: "board",
   audioEnabled: true,
 };
 
@@ -27,6 +25,7 @@ const els = {
   audioBtn: document.getElementById("audio-btn"),
   seekSlider: document.getElementById("seek-slider"),
   boardBody: document.getElementById("board-body"),
+  boardPanel: document.getElementById("board-panel"),
   tradesBody: document.getElementById("trades-body"),
   pendingBody: document.getElementById("pending-body"),
   logBody: document.getElementById("log-body"),
@@ -34,9 +33,14 @@ const els = {
   chartPanel: document.getElementById("chart-panel"),
   tradesPanel: document.getElementById("trades-panel"),
   tradingPanel: document.getElementById("trading-panel"),
-  toggleChart: document.getElementById("toggle-chart"),
-  toggleTrades: document.getElementById("toggle-trades"),
-  toggleTrading: document.getElementById("toggle-trading"),
+  showBoard: document.getElementById("show-board"),
+  showChart: document.getElementById("show-chart"),
+  showTrades: document.getElementById("show-trades"),
+  orderSide: document.getElementById("order-side"),
+  orderPrice: document.getElementById("order-price"),
+  placeLimitBtn: document.getElementById("place-limit-btn"),
+  crossBuyBtn: document.getElementById("cross-buy-btn"),
+  crossSellBtn: document.getElementById("cross-sell-btn"),
   cancelOrdersBtn: document.getElementById("cancel-orders-btn"),
   resetAccountBtn: document.getElementById("reset-account-btn"),
   emptyState: document.getElementById("empty-state"),
@@ -714,12 +718,12 @@ function renderChart() {
 }
 
 function updatePanels() {
-  els.chartPanel.classList.toggle("hidden", !state.chartVisible);
-  els.tradesPanel.classList.toggle("hidden", !state.tradesVisible);
-  els.tradingPanel.classList.toggle("hidden", !state.tradingVisible);
-  els.toggleChart.classList.toggle("active", state.chartVisible);
-  els.toggleTrades.classList.toggle("active", state.tradesVisible);
-  els.toggleTrading.classList.toggle("active", state.tradingVisible);
+  els.boardPanel.classList.toggle("hidden", state.activeSection !== "board");
+  els.chartPanel.classList.toggle("hidden", state.activeSection !== "chart");
+  els.tradesPanel.classList.toggle("hidden", state.activeSection !== "trades");
+  els.showBoard.classList.toggle("active", state.activeSection === "board");
+  els.showChart.classList.toggle("active", state.activeSection === "chart");
+  els.showTrades.classList.toggle("active", state.activeSection === "trades");
 }
 
 function renderPlaybackMeta(bestBid = null, bestAsk = null) {
@@ -835,6 +839,28 @@ async function handleBoardOrder(event) {
   await updateView();
 }
 
+async function submitLimitOrder(side, price) {
+  if (!state.session || !Number.isFinite(price) || price <= 0) {
+    return;
+  }
+  await ensureChunkForIndex(state.currentIndex);
+  const frame = frameAt(state.currentIndex);
+  if (!frame) {
+    return;
+  }
+  const { bestBid, bestAsk } = bestPrices(frame.asks, frame.bids);
+  engine.onMarket({
+    timeMicro: state.session.playbackTimes[state.currentIndex],
+    bestBid,
+    bestAsk,
+    lastPrice: state.session.prices[state.currentIndex],
+    eventType: state.session.events[state.currentIndex],
+    tradePrice: state.session.prices[state.currentIndex],
+  });
+  engine.placeLimit(side, Number(price), state.session.playbackTimes[state.currentIndex]);
+  await updateView();
+}
+
 async function chartSeekFromEvent(event) {
   if (!state.session || state.session.tradeTimes.length === 0) {
     return;
@@ -911,6 +937,21 @@ function bindEvents() {
     updateView();
   });
   els.boardBody.addEventListener("click", handleBoardOrder);
+  els.placeLimitBtn.addEventListener("click", async () => {
+    await submitLimitOrder(els.orderSide.value, Number(els.orderPrice.value));
+  });
+  els.crossBuyBtn.addEventListener("click", async () => {
+    const bestAsk = Number(els.bestAsk.textContent.replace(/,/g, ""));
+    if (Number.isFinite(bestAsk) && bestAsk > 0) {
+      await submitLimitOrder("BUY", bestAsk);
+    }
+  });
+  els.crossSellBtn.addEventListener("click", async () => {
+    const bestBid = Number(els.bestBid.textContent.replace(/,/g, ""));
+    if (Number.isFinite(bestBid) && bestBid > 0) {
+      await submitLimitOrder("SELL", bestBid);
+    }
+  });
   els.cancelOrdersBtn.addEventListener("click", () => {
     engine.cancelAll();
     updateView();
@@ -919,16 +960,17 @@ function bindEvents() {
     engine.reset();
     updateView();
   });
-  els.toggleChart.addEventListener("click", () => {
-    state.chartVisible = !state.chartVisible;
+  els.showBoard.addEventListener("click", () => {
+    state.activeSection = "board";
     updatePanels();
   });
-  els.toggleTrades.addEventListener("click", () => {
-    state.tradesVisible = !state.tradesVisible;
+  els.showChart.addEventListener("click", () => {
+    state.activeSection = "chart";
     updatePanels();
+    renderChart();
   });
-  els.toggleTrading.addEventListener("click", () => {
-    state.tradingVisible = !state.tradingVisible;
+  els.showTrades.addEventListener("click", () => {
+    state.activeSection = "trades";
     updatePanels();
   });
 
