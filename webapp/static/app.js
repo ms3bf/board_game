@@ -4,57 +4,43 @@ const state = {
   currentFile: "",
   chunkSize: 512,
   chunkCache: new Map(),
+  currentChunkIndex: 0,
   currentIndex: 0,
   virtualTime: 0,
-  isPlaying: false,
-  playSpeed: 1,
-  lastRealTime: 0,
-  playTimerId: null,
-  playTickBusy: false,
-  playbackStepMicro: 500_000,
+  realtimeTimerId: null,
   activeSection: "board",
-  audioEnabled: true,
+  chartMode: "line",
+  chartTimeframe: "1m",
+  chartBarsVisible: 20,
+  lastBoardOrderSig: "",
+  lastBoardOrderAtMs: 0,
 };
 
 const els = {
   appHeader: document.querySelector(".app-header"),
   appMain: document.querySelector(".app-main"),
   errorBanner: document.getElementById("error-banner"),
-  fileSelect: document.getElementById("file-select"),
-  playBtn: document.getElementById("play-btn"),
-  backBtn: document.getElementById("back-btn"),
-  forwardBtn: document.getElementById("forward-btn"),
-  speedBtn: document.getElementById("speed-btn"),
-  audioBtn: document.getElementById("audio-btn"),
-  seekSlider: document.getElementById("seek-slider"),
   boardBody: document.getElementById("board-body"),
-  boardPanel: document.getElementById("board-panel"),
   tradesBody: document.getElementById("trades-body"),
   sectionViewport: document.getElementById("section-viewport"),
   sectionTrack: document.getElementById("section-track"),
   pendingBody: document.getElementById("pending-body"),
   logBody: document.getElementById("log-body"),
   chartCanvas: document.getElementById("chart-canvas"),
-  chartPanel: document.getElementById("chart-panel"),
-  tradesPanel: document.getElementById("trades-panel"),
-  tradingPanel: document.getElementById("trading-panel"),
+  chartLine: document.getElementById("chart-line"),
+  tf1m: document.getElementById("tf-1m"),
+  tf5m: document.getElementById("tf-5m"),
+  zoomOut: document.getElementById("zoom-out"),
+  zoomIn: document.getElementById("zoom-in"),
   showBoard: document.getElementById("show-board"),
   showChart: document.getElementById("show-chart"),
   showTrades: document.getElementById("show-trades"),
-  orderSide: document.getElementById("order-side"),
-  orderPrice: document.getElementById("order-price"),
-  placeLimitBtn: document.getElementById("place-limit-btn"),
-  crossBuyBtn: document.getElementById("cross-buy-btn"),
-  crossSellBtn: document.getElementById("cross-sell-btn"),
   cancelOrdersBtn: document.getElementById("cancel-orders-btn"),
-  resetAccountBtn: document.getElementById("reset-account-btn"),
   emptyState: document.getElementById("empty-state"),
-  metaFile: document.getElementById("meta-file"),
   metaTime: document.getElementById("meta-time"),
-  metaIndex: document.getElementById("meta-index"),
   bestBid: document.getElementById("best-bid"),
   bestAsk: document.getElementById("best-ask"),
-  lastTrade: document.getElementById("last-trade"),
+  headlineCash: document.getElementById("headline-cash"),
   speedLabel: document.getElementById("speed-label"),
   sumCash: document.getElementById("sum-cash"),
   sumPos: document.getElementById("sum-pos"),
@@ -63,6 +49,30 @@ const els = {
   sumUnreal: document.getElementById("sum-unreal"),
   sumEquity: document.getElementById("sum-equity"),
 };
+
+const soundPaths = {
+  place: "/voice/hattyu.wav",
+  fill: "/voice/yakujo.wav",
+  profit: "/voice/kati.wav",
+  loss: "/voice/make.wav",
+};
+
+const soundPriority = {
+  place: 0,
+  fill: 1,
+  profit: 2,
+  loss: 2,
+};
+
+const soundVolumes = {
+  place: 0.08,
+  fill: 0.09,
+  profit: 0.1,
+  loss: 0.1,
+};
+
+const soundPool = new Map();
+let audioUnlocked = false;
 
 class TradingEngine {
   constructor(initialCash = 1_000_000, lotSize = 100) {
@@ -82,7 +92,6 @@ class TradingEngine {
     this.bestAsk = 0;
     this.nextOid = 1;
     this.pending = [];
-    this.logs = [];
     this.logRows = [];
     this.pushRow({
       timeMicro: 0,
@@ -98,17 +107,16 @@ class TradingEngine {
     });
   }
 
+  configure(initialCash, lotSize = this.lotSize) {
+    this.initialCash = initialCash;
+    this.lotSize = lotSize;
+    this.reset();
+  }
+
   pushRow(row) {
     this.logRows.push(row);
     if (this.logRows.length > 2000) {
       this.logRows = this.logRows.slice(-2000);
-    }
-  }
-
-  log(message) {
-    this.logs.push(message);
-    if (this.logs.length > 400) {
-      this.logs = this.logs.slice(-400);
     }
   }
 
@@ -119,7 +127,6 @@ class TradingEngine {
   cancelAll() {
     const count = this.pending.length;
     this.pending = [];
-    this.log(`Cancel all pending (${count})`);
     this.pushRow({
       timeMicro: 0,
       kind: "CANCEL",
@@ -161,10 +168,6 @@ class TradingEngine {
       realizedPnl: this.realizedPnl,
       unrealizedPnl: this.unrealized(),
       equity: this.equity(),
-      bestBid: this.bestBid,
-      bestAsk: this.bestAsk,
-      lastPrice: this.lastPrice,
-      lastTradePrice: this.lastTradePrice,
     };
   }
 
@@ -186,35 +189,24 @@ class TradingEngine {
       this.avgPrice = price;
     } else if (prevPos > 0) {
       if (qty > 0) {
-        this.avgPrice = (this.avgPrice * prevPos + price * qty) / nextPos;
+        this.avgPrice = (this.avgPrice * prevPos + price) / nextPos;
         this.position = nextPos;
       } else {
-        const closeQty = Math.min(prevPos, -qty);
-        realizedDelta = (price - this.avgPrice) * this.lotSize * closeQty;
+        realizedDelta = (price - this.avgPrice) * this.lotSize;
         this.realizedPnl += realizedDelta;
         this.position = nextPos;
-        if (this.position === 0) {
-          this.avgPrice = 0;
-        } else if (this.position < 0) {
-          this.avgPrice = price;
-        }
+        this.avgPrice = this.position === 0 ? 0 : price;
       }
     } else if (qty < 0) {
-      this.avgPrice = (this.avgPrice * Math.abs(prevPos) + price * Math.abs(qty)) / Math.abs(nextPos);
+      this.avgPrice = (this.avgPrice * Math.abs(prevPos) + price) / Math.abs(nextPos);
       this.position = nextPos;
     } else {
-      const closeQty = Math.min(Math.abs(prevPos), qty);
-      realizedDelta = (this.avgPrice - price) * this.lotSize * closeQty;
+      realizedDelta = (this.avgPrice - price) * this.lotSize;
       this.realizedPnl += realizedDelta;
       this.position = nextPos;
-      if (this.position === 0) {
-        this.avgPrice = 0;
-      } else if (this.position > 0) {
-        this.avgPrice = price;
-      }
+      this.avgPrice = this.position === 0 ? 0 : price;
     }
 
-    this.log(`${formatTime(timeMicro)} FILL ${side} 1lot @${formatInt(price)} (${reason})`);
     this.pushRow({
       timeMicro,
       kind: "FILL",
@@ -228,35 +220,51 @@ class TradingEngine {
       realizedTotal: this.realizedPnl,
     });
 
-    beep("fill");
     if (realizedDelta > 0) {
-      beep("profit");
-    } else if (realizedDelta < 0) {
-      beep("loss");
+      return "profit";
     }
+    if (realizedDelta < 0) {
+      return "loss";
+    }
+    return "fill";
+  }
+
+  canPlace(side, price) {
+    const referencePrice = Math.max(1, price, this.markPrice(), this.bestAsk, this.bestBid);
+    const pendingSameSide = this.pending.filter((order) => order.side === side).length;
+    const nextDirectionalLots = side === "BUY"
+      ? Math.max(0, this.position) + pendingSameSide + 1
+      : Math.max(0, -this.position) + pendingSameSide + 1;
+    const notional = nextDirectionalLots * referencePrice * this.lotSize;
+    return notional <= Math.max(0, this.cash);
   }
 
   placeLimit(side, limitPrice, timeMicro) {
     const price = Number(limitPrice);
-    beep("place");
+    if (!this.canPlace(side, price)) {
+      this.pushRow({
+        timeMicro,
+        kind: "REJECT",
+        side,
+        price,
+        qtyLot: 1,
+        reason: "cash-limit",
+        posAfter: this.position,
+        avgAfter: this.avgPrice,
+        realizedDelta: 0,
+        realizedTotal: this.realizedPnl,
+      });
+      return null;
+    }
     if (side === "BUY" && this.bestAsk > 0 && price >= this.bestAsk) {
-      this.applyFill("BUY", this.bestAsk, "marketable-limit", timeMicro);
-      return;
+      return this.applyFill("BUY", this.bestAsk, "marketable-limit", timeMicro);
     }
     if (side === "SELL" && this.bestBid > 0 && price <= this.bestBid) {
-      this.applyFill("SELL", this.bestBid, "marketable-limit", timeMicro);
-      return;
+      return this.applyFill("SELL", this.bestBid, "marketable-limit", timeMicro);
     }
-
-    const order = {
-      oid: this.nextOid,
-      side,
-      limitPrice: price,
-      placedTimeMicro: timeMicro,
-    };
+    const order = { oid: this.nextOid, side, limitPrice: price, placedTimeMicro: timeMicro };
     this.nextOid += 1;
     this.pending.push(order);
-    this.log(`${formatTime(timeMicro)} PLACE #${order.oid} ${side} @${formatInt(price)}`);
     this.pushRow({
       timeMicro,
       kind: "PLACE",
@@ -269,6 +277,7 @@ class TradingEngine {
       realizedDelta: 0,
       realizedTotal: this.realizedPnl,
     });
+    return "place";
   }
 
   onMarket({ timeMicro, bestBid, bestAsk, lastPrice, eventType, tradePrice }) {
@@ -279,29 +288,44 @@ class TradingEngine {
       this.lastTradePrice = tradePrice;
     }
     if (this.pending.length === 0) {
-      return;
+      return null;
     }
-
+    let sound = null;
     const remain = [];
     for (const order of this.pending) {
       if (order.side === "BUY") {
         if (this.bestAsk > 0 && this.bestAsk <= order.limitPrice) {
-          this.applyFill("BUY", this.bestAsk, `touch#${order.oid}`, timeMicro);
+          sound = preferSound(sound, this.applyFill("BUY", this.bestAsk, `touch#${order.oid}`, timeMicro));
         } else {
           remain.push(order);
         }
       } else if (this.bestBid > 0 && this.bestBid >= order.limitPrice) {
-        this.applyFill("SELL", this.bestBid, `touch#${order.oid}`, timeMicro);
+        sound = preferSound(sound, this.applyFill("SELL", this.bestBid, `touch#${order.oid}`, timeMicro));
       } else {
         remain.push(order);
       }
     }
     this.pending = remain;
+    return sound;
+  }
+
+  syncQuote({ bestBid, bestAsk, lastPrice, eventType, tradePrice }) {
+    this.bestBid = bestBid > 0 ? bestBid : 0;
+    this.bestAsk = bestAsk > 0 ? bestAsk : 0;
+    this.lastPrice = lastPrice > 0 ? lastPrice : this.lastPrice;
+    if (eventType === 2 && tradePrice > 0) {
+      this.lastTradePrice = tradePrice;
+    }
   }
 }
 
 const engine = new TradingEngine();
-const audioState = { context: null };
+
+function initialCashForSession(session, lotSize = 100) {
+  const firstClose = session?.chart?.["1m"]?.closes?.[0] ?? 0;
+  const baseNotional = Math.max(1, firstClose) * lotSize;
+  return Math.max(10_000_000, baseNotional * 8);
+}
 
 function formatTime(timeMicro) {
   if (!timeMicro || timeMicro <= 0) {
@@ -314,37 +338,11 @@ function formatTime(timeMicro) {
   return `${hh}:${mm}:${ss}`;
 }
 
-function formatPlaybackTime(timeMicro) {
-  if (!timeMicro || timeMicro <= 0) {
-    return "--:--:--.0";
-  }
-  const totalSec = Math.floor(timeMicro / 1_000_000);
-  const hh = String(Math.floor(totalSec / 3600)).padStart(2, "0");
-  const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
-  const ss = String(totalSec % 60).padStart(2, "0");
-  const tenths = Math.floor((timeMicro % 1_000_000) / 100_000);
-  return `${hh}:${mm}:${ss}.${tenths}`;
-}
-
 function formatInt(value) {
   if (!value) {
     return "-";
   }
   return Number(value).toLocaleString("ja-JP");
-}
-
-function lowerBound(arr, target) {
-  let lo = 0;
-  let hi = arr.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (arr[mid] < target) {
-      lo = mid + 1;
-    } else {
-      hi = mid;
-    }
-  }
-  return lo;
 }
 
 function upperBound(arr, target) {
@@ -370,18 +368,21 @@ function bestPrices(asks, bids) {
   };
 }
 
+function dayTimeMicro(now = new Date()) {
+  return (
+    ((now.getHours() * 60 + now.getMinutes()) * 60 + now.getSeconds()) * 1_000_000 +
+    now.getMilliseconds() * 1000
+  );
+}
+
 function showError(message) {
-  if (!els.errorBanner) {
-    return;
-  }
+  if (!els.errorBanner) return;
   els.errorBanner.textContent = message;
   els.errorBanner.classList.remove("hidden");
 }
 
 function clearError() {
-  if (!els.errorBanner) {
-    return;
-  }
+  if (!els.errorBanner) return;
   els.errorBanner.textContent = "";
   els.errorBanner.classList.add("hidden");
 }
@@ -396,77 +397,47 @@ async function fetchJson(url) {
 
 function preprocessSession(session) {
   session.maxIndex = Math.max(0, session.rowCount - 1);
-  session.playbackTimes = buildPlaybackTimes(session.times);
-  session.tradeTimes = session.tradeIndices.map((index) => session.playbackTimes[index]);
+  session.chunkCount = session.chunkFirstTimes.length;
   return session;
-}
-
-function buildPlaybackTimes(times) {
-  if (!times || times.length === 0) {
-    return [];
-  }
-  const playback = new Array(times.length);
-  let start = 0;
-  while (start < times.length) {
-    const secondBase = Math.floor(times[start] / 1_000_000) * 1_000_000;
-    let end = start + 1;
-    while (end < times.length && Math.floor(times[end] / 1_000_000) * 1_000_000 === secondBase) {
-      end += 1;
-    }
-    const count = end - start;
-    for (let i = 0; i < count; i += 1) {
-      playback[start + i] = secondBase + Math.floor((i * 1_000_000) / count);
-    }
-    start = end;
-  }
-  return playback;
 }
 
 async function loadFiles() {
   clearError();
   state.files = await fetchJson("/api/files");
-  els.fileSelect.innerHTML = "";
-  for (const file of state.files) {
-    const option = document.createElement("option");
-    option.value = file.name;
-    option.textContent = `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
-    els.fileSelect.appendChild(option);
-  }
-
   const hasFiles = state.files.length > 0;
   els.emptyState.classList.toggle("hidden", hasFiles);
-  if (els.appHeader) {
-    els.appHeader.classList.toggle("hidden", !hasFiles);
-  }
-  if (els.appMain) {
-    els.appMain.classList.toggle("hidden", !hasFiles);
-  }
+  els.appHeader.classList.toggle("hidden", !hasFiles);
   if (hasFiles) {
-    await loadSession(state.files[0].name);
+    await loadSession(pickDefaultFile(state.files).name);
   }
 }
 
+function pickDefaultFile(files) {
+  const livePattern = /(24h|live|realtime)/i;
+  return files.find((file) => livePattern.test(file.name)) ?? files[0];
+}
+
 async function loadSession(filename) {
-  stopPlayback();
   clearError();
   const raw = await fetchJson(`/api/session-summary?file=${encodeURIComponent(filename)}`);
   state.session = preprocessSession(raw);
   state.currentFile = filename;
   state.chunkSize = raw.chunkSize || 512;
   state.chunkCache = new Map();
-  state.currentIndex = 0;
-  state.virtualTime = state.session.playbackTimes[0] ?? 0;
-  engine.reset();
-
-  els.fileSelect.value = filename;
-  els.seekSlider.max = String(state.session.maxIndex);
-  els.seekSlider.value = "0";
-  await ensureChunkForIndex(0);
+  engine.configure(initialCashForSession(state.session), 100);
+  await syncToRealClock();
   await updateView();
+  startRealtimeClock();
 }
 
 function chunkIndexForRow(rowIndex) {
   return Math.floor(rowIndex / state.chunkSize);
+}
+
+function chunkIndexForTime(targetTime) {
+  if (!state.session) return 0;
+  const idx = upperBound(state.session.chunkLastTimes, targetTime);
+  return Math.max(0, Math.min(idx, state.session.chunkCount - 1));
 }
 
 async function ensureChunk(chunkIndex) {
@@ -481,160 +452,166 @@ async function ensureChunk(chunkIndex) {
 }
 
 async function ensureChunkForIndex(rowIndex) {
-  if (!state.session) {
-    return null;
-  }
+  if (!state.session) return null;
   const chunkIndex = chunkIndexForRow(rowIndex);
-  const current = await ensureChunk(chunkIndex);
-  if (rowIndex >= current.end - 16 && current.end < state.session.rowCount) {
+  const chunk = await ensureChunk(chunkIndex);
+  if (rowIndex >= chunk.end - 24 && chunk.end < state.session.rowCount) {
     ensureChunk(chunkIndex + 1).catch(() => {});
   }
-  return current;
+  return chunk;
 }
 
 function frameAt(index) {
   const chunkIndex = chunkIndexForRow(index);
   const chunk = state.chunkCache.get(chunkIndex);
-  if (!chunk) {
-    return null;
-  }
+  if (!chunk) return null;
   const offset = index - chunk.start;
   return {
+    time: chunk.times[offset],
+    event: chunk.events[offset],
+    price: chunk.prices[offset],
+    size: chunk.sizes[offset],
+    direction: chunk.directions[offset],
     asks: chunk.asks[offset],
     bids: chunk.bids[offset],
   };
 }
 
-function tradeRows(limit = 100) {
-  const session = state.session;
-  if (!session) {
-    return [];
-  }
-  const end = upperBound(session.tradeIndices, state.currentIndex);
-  const start = Math.max(0, end - limit);
-  return session.tradeIndices.slice(start, end).reverse().map((index) => ({
-    time: session.playbackTimes[index],
-    price: session.prices[index],
-    size: session.sizes[index],
-    side: session.directions[index],
-  }));
+function indexInChunkForTime(chunk, targetTime) {
+  const local = Math.max(0, upperBound(chunk.times, targetTime) - 1);
+  return Math.min(chunk.end - chunk.start - 1, local);
 }
 
-function latestTradePriceUpTo(index) {
-  const session = state.session;
-  if (!session || session.tradeIndices.length === 0) {
-    return null;
-  }
-  const pos = upperBound(session.tradeIndices, index) - 1;
-  if (pos < 0) {
-    return null;
-  }
-  return session.prices[session.tradeIndices[pos]];
+async function syncToRealClock() {
+  if (!state.session) return;
+  state.virtualTime = dayTimeMicro();
+  const chunkIndex = chunkIndexForTime(state.virtualTime);
+  const chunk = await ensureChunk(chunkIndex);
+  state.currentChunkIndex = chunkIndex;
+  state.currentIndex = chunk.start + indexInChunkForTime(chunk, state.virtualTime);
 }
 
-function tradePricesInRange(startIndex, endIndex) {
-  const session = state.session;
-  const prices = new Set();
-  if (!session) {
-    return prices;
-  }
-  let leftIndex = startIndex;
-  let rightIndex = endIndex;
-  if (rightIndex < leftIndex) {
-    [leftIndex, rightIndex] = [rightIndex, leftIndex];
-  }
-  const left = lowerBound(session.tradeIndices, Math.max(0, leftIndex));
-  const right = upperBound(session.tradeIndices, rightIndex);
-  for (let i = left; i < right; i += 1) {
-    prices.add(session.prices[session.tradeIndices[i]]);
-  }
-  return prices;
-}
-
-function stepToIndex(targetIndex) {
-  if (!state.session) {
-    return;
-  }
-  state.currentIndex = Math.max(0, Math.min(targetIndex, state.session.maxIndex));
-  state.virtualTime = state.session.playbackTimes[state.currentIndex];
-}
-
-function processUntilTime(targetTime) {
-  if (!state.session) {
-    return false;
-  }
-  const times = state.session.playbackTimes;
-  let idx = state.currentIndex;
-  if (targetTime >= times[idx]) {
-    while (idx < state.session.maxIndex && times[idx + 1] <= targetTime) {
-      idx += 1;
-    }
-  } else {
-    while (idx > 0 && times[idx] > targetTime) {
-      idx -= 1;
+async function collectTradeRows(limit = 120) {
+  const rows = [];
+  for (let chunkIndex = state.currentChunkIndex; chunkIndex >= 0 && rows.length < limit; chunkIndex -= 1) {
+    const chunk = await ensureChunk(chunkIndex);
+    const maxOffset = chunkIndex === state.currentChunkIndex ? state.currentIndex - chunk.start : chunk.end - chunk.start - 1;
+    for (let offset = maxOffset; offset >= 0 && rows.length < limit; offset -= 1) {
+      if (chunk.events[offset] !== 2) continue;
+      const price = chunk.prices[offset];
+      let side = 0;
+      if (offset > 0 && chunk.prices[offset - 1] !== undefined) {
+        side = price > chunk.prices[offset - 1] ? 1 : price < chunk.prices[offset - 1] ? -1 : 0;
+      }
+      if (side === 0) {
+        side = chunk.directions[offset] < 0 ? 1 : -1;
+      }
+      rows.push({
+        time: chunk.times[offset],
+        price,
+        size: chunk.sizes[offset],
+        side,
+      });
     }
   }
-  stepToIndex(idx);
-  return state.currentIndex < state.session.maxIndex;
+  return rows;
 }
 
-function renderBoard(frame, highlightPrices) {
-  const session = state.session;
-  if (!session || !frame) {
-    return;
+function latestTradePriceFromCache() {
+  for (let chunkIndex = state.currentChunkIndex; chunkIndex >= 0; chunkIndex -= 1) {
+    const chunk = state.chunkCache.get(chunkIndex);
+    if (!chunk) continue;
+    const maxOffset = chunkIndex === state.currentChunkIndex ? state.currentIndex - chunk.start : chunk.end - chunk.start - 1;
+    for (let offset = maxOffset; offset >= 0; offset -= 1) {
+      if (chunk.events[offset] === 2) {
+        return chunk.prices[offset];
+      }
+    }
   }
-  const asks = frame.asks;
-  const bids = frame.bids;
+  return 0;
+}
+
+function estimateTickSize(prices) {
+  const unique = Array.from(new Set(prices.filter((price) => Number.isFinite(price) && price > 0))).sort((a, b) => a - b);
+  if (unique.length < 2) return 1;
+  let tick = Infinity;
+  for (let i = 1; i < unique.length; i += 1) {
+    const diff = unique[i] - unique[i - 1];
+    if (diff > 0 && diff < tick) tick = diff;
+  }
+  return Number.isFinite(tick) ? tick : 1;
+}
+
+function buildBoardLadder(priceSet, tickSize, anchorPrice, rows = 20) {
+  const prices = Array.from(priceSet).filter((price) => Number.isFinite(price) && price > 0).sort((a, b) => b - a);
+  if (prices.length === 0) return [];
+  const tick = Math.max(1, tickSize);
+  const topPrice = prices[0];
+  const bottomPrice = prices[prices.length - 1];
+  const ladder = [];
+  for (let price = topPrice; price >= bottomPrice; price -= tick) {
+    ladder.push(price);
+  }
+  if (ladder.length <= rows) return ladder;
+  const target = Number.isFinite(anchorPrice) && anchorPrice > 0 ? anchorPrice : ladder[Math.floor(ladder.length / 2)];
+  let nearestIndex = 0;
+  let nearestDelta = Infinity;
+  for (let i = 0; i < ladder.length; i += 1) {
+    const delta = Math.abs(ladder[i] - target);
+    if (delta < nearestDelta) {
+      nearestDelta = delta;
+      nearestIndex = i;
+    }
+  }
+  const start = Math.max(0, Math.min(ladder.length - rows, nearestIndex - Math.floor(rows * 0.4)));
+  return ladder.slice(start, start + rows);
+}
+
+function renderBoard(frame, highlightPrice) {
   const askMap = new Map();
   const bidMap = new Map();
   const prices = new Set();
-
-  for (const level of asks) {
+  for (const level of frame.asks) {
     const [price, qty, orderCount] = level;
     if (price > 0) {
       prices.add(price);
       askMap.set(price, { qty, orderCount });
     }
   }
-  for (const level of bids) {
+  for (const level of frame.bids) {
     const [price, qty, orderCount] = level;
     if (price > 0) {
       prices.add(price);
       bidMap.set(price, { qty, orderCount });
     }
   }
-
-  const sorted = Array.from(prices).sort((a, b) => b - a).slice(0, 20);
-  const lastTradePrice = latestTradePriceUpTo(state.currentIndex);
+  const { bestBid, bestAsk } = bestPrices(frame.asks, frame.bids);
+  const lastTradePrice = latestTradePriceFromCache();
+  const tickSize = estimateTickSize([...Array.from(prices), lastTradePrice, bestBid, bestAsk]);
+  const sorted = buildBoardLadder(prices, tickSize, bestAsk || lastTradePrice || bestBid, 20);
   const pendingPrices = engine.pendingPrices();
-  const rows = [];
-
   const fillCell = (value) => (value > 0 ? formatInt(value) : "");
 
-  for (const price of sorted) {
+  const rows = sorted.map((price) => {
     const ask = askMap.get(price) ?? { qty: 0, orderCount: 0 };
     const bid = bidMap.get(price) ?? { qty: 0, orderCount: 0 };
     const classes = ["price-cell"];
-    if (pendingPrices.has(price)) {
-      classes.push("pending");
-    }
-    if (lastTradePrice === price) {
-      classes.push("last-trade");
-    }
-    if (highlightPrices.has(price)) {
-      classes.push("highlight");
-    }
+    if (bestAsk > 0 && price >= bestAsk) classes.push("ask-price");
+    else if (bestBid > 0 && price <= bestBid) classes.push("bid-price");
+    if (pendingPrices.has(price)) classes.push("pending");
+    if (lastTradePrice === price) classes.push("last-trade");
+    if (highlightPrice > 0 && highlightPrice === price) classes.push("highlight");
 
-    rows.push(`
+    return `
       <tr>
         <td class="ask-order">${fillCell(ask.orderCount)}</td>
-        <td class="ask-qty"><button type="button" data-side="SELL" data-price="${price}" ${ask.qty > 0 ? "" : "disabled"}>${fillCell(ask.qty)}</button></td>
+        <td class="ask-qty"><button type="button" class="${ask.qty > 0 ? "" : "empty-level"}" data-side="SELL" data-price="${price}">${fillCell(ask.qty)}</button></td>
         <td class="${classes.join(" ")}">${formatInt(price)}</td>
-        <td class="bid-qty"><button type="button" data-side="BUY" data-price="${price}" ${bid.qty > 0 ? "" : "disabled"}>${fillCell(bid.qty)}</button></td>
+        <td class="bid-qty"><button type="button" class="${bid.qty > 0 ? "" : "empty-level"}" data-side="BUY" data-price="${price}">${fillCell(bid.qty)}</button></td>
         <td class="bid-order">${fillCell(bid.orderCount)}</td>
       </tr>
-    `);
-  }
+    `;
+  });
 
   while (rows.length < 20) {
     rows.push(`
@@ -647,17 +624,17 @@ function renderBoard(frame, highlightPrices) {
       </tr>
     `);
   }
-
   els.boardBody.innerHTML = rows.join("");
 }
 
-function renderTrades() {
-  els.tradesBody.innerHTML = tradeRows().map((row) => `
+async function renderTrades() {
+  const rows = await collectTradeRows();
+  els.tradesBody.innerHTML = rows.map((row) => `
     <tr>
       <td>${formatTime(row.time)}</td>
       <td>${formatInt(row.price)}</td>
       <td>${formatInt(row.size)}</td>
-      <td class="${row.side < 0 ? "sell" : "buy"}">${row.side < 0 ? "SELL" : "BUY"}</td>
+      <td class="${row.side < 0 ? "sell" : "buy"}">${row.side < 0 ? "売" : "買"}</td>
     </tr>
   `).join("");
 }
@@ -674,7 +651,7 @@ function renderTrading() {
   els.pendingBody.innerHTML = engine.pending.map((order) => `
     <tr>
       <td>${order.oid}</td>
-      <td class="${order.side === "BUY" ? "buy" : "sell"}">${order.side}</td>
+      <td class="${order.side === "BUY" ? "buy" : "sell"}">${order.side === "BUY" ? "買" : "売"}</td>
       <td>${formatInt(order.limitPrice)}</td>
       <td>${formatTime(order.placedTimeMicro)}</td>
     </tr>
@@ -684,7 +661,7 @@ function renderTrading() {
     <tr>
       <td>${formatTime(row.timeMicro)}</td>
       <td>${row.kind}</td>
-      <td class="${row.side === "BUY" ? "buy" : row.side === "SELL" ? "sell" : ""}">${row.side}</td>
+      <td class="${row.side === "BUY" ? "buy" : row.side === "SELL" ? "sell" : ""}">${row.side === "BUY" ? "買" : row.side === "SELL" ? "売" : row.side}</td>
       <td>${row.price > 0 ? formatInt(row.price) : "-"}</td>
       <td>${row.qtyLot > 0 ? row.qtyLot : "-"}</td>
       <td>${row.reason}</td>
@@ -697,7 +674,7 @@ function renderTrading() {
 }
 
 function renderChart() {
-  const session = state.session;
+  const series = state.session?.chart?.[state.chartTimeframe];
   const canvas = els.chartCanvas;
   const ctx = canvas.getContext("2d");
   const width = canvas.width;
@@ -705,20 +682,34 @@ function renderChart() {
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#081119";
   ctx.fillRect(0, 0, width, height);
-
-  if (!session || session.tradeTimes.length === 0) {
+  if (!series || series.bucketTimes.length === 0) {
     ctx.fillStyle = "#edf7fb";
     ctx.font = "16px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("No trade data", width / 2, height / 2);
+    ctx.fillText("No chart data", width / 2, height / 2);
     return;
   }
 
-  const pad = { top: 18, right: 14, bottom: 24, left: 14 };
-  const tMin = session.tradeTimes[0];
-  const tMax = session.tradeTimes[session.tradeTimes.length - 1];
-  const pMin = Math.min(...session.tradePrices);
-  const pMax = Math.max(...session.tradePrices);
+  const end = upperBound(series.bucketTimes, state.virtualTime);
+  if (end <= 0) {
+    ctx.fillStyle = "#edf7fb";
+    ctx.font = "16px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Waiting for first trade", width / 2, height / 2);
+    return;
+  }
+
+  const start = Math.max(0, end - state.chartBarsVisible);
+  const times = series.bucketTimes.slice(start, end);
+  const opens = series.opens.slice(start, end);
+  const highs = series.highs.slice(start, end);
+  const lows = series.lows.slice(start, end);
+  const closes = series.closes.slice(start, end);
+  const pad = { top: 18, right: 56, bottom: 24, left: 14 };
+  const tMin = times[0];
+  const tMax = Math.max(times[times.length - 1], tMin + 1);
+  const pMin = Math.min(...lows);
+  const pMax = Math.max(...highs);
   const tRange = Math.max(1, tMax - tMin);
   const pRange = Math.max(1, pMax - pMin);
 
@@ -732,28 +723,62 @@ function renderChart() {
     ctx.stroke();
   }
 
-  ctx.strokeStyle = "#5ec8ff";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  const step = Math.max(1, Math.floor(session.tradeTimes.length / Math.max(1, width / 2)));
-  for (let i = 0; i < session.tradeTimes.length; i += step) {
-    const x = pad.left + ((session.tradeTimes[i] - tMin) / tRange) * (width - pad.left - pad.right);
-    const y = height - pad.bottom - ((session.tradePrices[i] - pMin) / pRange) * (height - pad.top - pad.bottom);
-    if (i === 0) {
-      ctx.moveTo(x, y);
-    } else {
-      ctx.lineTo(x, y);
+  if (state.chartMode === "line") {
+    ctx.strokeStyle = "#5ec8ff";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < times.length; i += 1) {
+      const x = pad.left + ((times[i] - tMin) / tRange) * (width - pad.left - pad.right);
+      const y = height - pad.bottom - ((closes[i] - pMin) / pRange) * (height - pad.top - pad.bottom);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  } else {
+    const candleGap = Math.max(6, (width - pad.left - pad.right) / Math.max(1, times.length));
+    const candleWidth = Math.max(3, candleGap * 0.55);
+    for (let i = 0; i < times.length; i += 1) {
+      const x = pad.left + ((times[i] - tMin) / tRange) * (width - pad.left - pad.right);
+      const openY = height - pad.bottom - ((opens[i] - pMin) / pRange) * (height - pad.top - pad.bottom);
+      const highY = height - pad.bottom - ((highs[i] - pMin) / pRange) * (height - pad.top - pad.bottom);
+      const lowY = height - pad.bottom - ((lows[i] - pMin) / pRange) * (height - pad.top - pad.bottom);
+      const closeY = height - pad.bottom - ((closes[i] - pMin) / pRange) * (height - pad.top - pad.bottom);
+      const rising = closes[i] >= opens[i];
+      ctx.strokeStyle = rising ? "#ff6b6b" : "#3fd08a";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x, highY);
+      ctx.lineTo(x, lowY);
+      ctx.stroke();
+      const bodyTop = Math.min(openY, closeY);
+      const bodyHeight = Math.max(2, Math.abs(closeY - openY));
+      ctx.fillStyle = rising ? "#ff6b6b" : "#3fd08a";
+      ctx.fillRect(x - candleWidth / 2, bodyTop, candleWidth, bodyHeight);
     }
   }
+
+  const currentX = pad.left + ((state.virtualTime - tMin) / tRange) * (width - pad.left - pad.right);
+  ctx.strokeStyle = "#ff6961";
+  ctx.beginPath();
+  ctx.moveTo(currentX, pad.top);
+  ctx.lineTo(currentX, height - pad.bottom);
   ctx.stroke();
 
-  if (state.virtualTime >= tMin && state.virtualTime <= tMax) {
-    const x = pad.left + ((state.virtualTime - tMin) / tRange) * (width - pad.left - pad.right);
-    ctx.strokeStyle = "#ff6961";
-    ctx.beginPath();
-    ctx.moveTo(x, pad.top);
-    ctx.lineTo(x, height - pad.bottom);
-    ctx.stroke();
+  ctx.fillStyle = "rgba(143, 179, 191, 0.9)";
+  ctx.font = "12px sans-serif";
+  ctx.textAlign = "center";
+  for (let i = 0; i < Math.min(4, times.length); i += 1) {
+    const idx = Math.min(times.length - 1, Math.floor((times.length - 1) * (i / Math.max(1, Math.min(3, times.length - 1)))));
+    const tickTime = times[idx];
+    const x = pad.left + ((tickTime - tMin) / tRange) * (width - pad.left - pad.right);
+    ctx.fillText(formatTime(tickTime).slice(0, 5), x, height - 6);
+  }
+
+  ctx.textAlign = "right";
+  for (let i = 0; i < 5; i += 1) {
+    const price = pMax - (pRange * i) / 4;
+    const y = pad.top + ((height - pad.top - pad.bottom) * i) / 4 + 4;
+    ctx.fillText(formatInt(Math.round(price)), width - 4, y);
   }
 }
 
@@ -767,246 +792,151 @@ function updatePanels() {
   els.showBoard.classList.toggle("active", state.activeSection === "board");
   els.showChart.classList.toggle("active", state.activeSection === "chart");
   els.showTrades.classList.toggle("active", state.activeSection === "trades");
+  els.chartLine?.classList.toggle("active", state.chartMode === "line");
+  els.tf1m?.classList.toggle("active", state.chartTimeframe === "1m");
+  els.tf5m?.classList.toggle("active", state.chartTimeframe === "5m");
 }
 
 function renderPlaybackMeta(bestBid = null, bestAsk = null) {
-  const session = state.session;
-  if (!session) {
-    return;
-  }
-  const displayTime = state.isPlaying ? state.virtualTime : session.playbackTimes[state.currentIndex];
-  els.metaFile.textContent = session.name;
-  els.metaTime.textContent = formatPlaybackTime(displayTime);
-  els.metaIndex.textContent = `${state.currentIndex} / ${session.maxIndex}`;
-  if (bestBid !== null) {
-    els.bestBid.textContent = bestBid ? formatInt(bestBid) : "-";
-  }
-  if (bestAsk !== null) {
-    els.bestAsk.textContent = bestAsk ? formatInt(bestAsk) : "-";
-  }
-  const latestTrade = latestTradePriceUpTo(state.currentIndex);
-  els.lastTrade.textContent = latestTrade ? formatInt(latestTrade) : "-";
-  if (document.activeElement !== els.orderPrice && !els.orderPrice.value) {
-    els.orderPrice.placeholder = latestTrade ? String(latestTrade) : "";
-  }
-  if (els.speedLabel) {
-    els.speedLabel.textContent = state.playSpeed === 5 ? "x5" : "x1";
-  }
-  els.seekSlider.value = String(state.currentIndex);
+  if (!state.session) return;
+  els.metaTime.textContent = formatTime(state.virtualTime);
+  if (bestBid !== null) els.bestBid.textContent = bestBid ? formatInt(bestBid) : "-";
+  if (bestAsk !== null) els.bestAsk.textContent = bestAsk ? formatInt(bestAsk) : "-";
+  const cash = Math.round(engine.cash);
+  els.headlineCash.textContent = formatInt(cash);
+  els.headlineCash.classList.toggle("profit", cash > engine.initialCash);
+  els.headlineCash.classList.toggle("loss", cash < engine.initialCash);
+  if (els.speedLabel) els.speedLabel.textContent = state.chartTimeframe.toUpperCase();
 }
 
-async function tickPlayback() {
-  if (!state.isPlaying || !state.session || state.playTickBusy) {
-    return;
-  }
-  state.playTickBusy = true;
-  try {
-    const prevIndex = state.currentIndex;
-    state.virtualTime += state.playbackStepMicro * state.playSpeed;
-    const hasMore = processUntilTime(state.virtualTime);
-    if (prevIndex !== state.currentIndex) {
-      await updateView(tradePricesInRange(prevIndex + 1, state.currentIndex));
-    } else {
-      renderPlaybackMeta();
-      renderChart();
-    }
-    if (!hasMore) {
-      stopPlayback();
-    }
-  } finally {
-    state.playTickBusy = false;
-  }
-}
-
-function startPlayback() {
-  if (!state.session || state.isPlaying) {
-    return;
-  }
-  state.isPlaying = true;
-  state.playTickBusy = false;
-  els.playBtn.textContent = "Stop";
-  state.playTimerId = window.setInterval(() => {
-    tickPlayback().catch((error) => {
-      console.error(error);
-      stopPlayback();
-    });
-  }, 500);
-}
-
-function stopPlayback() {
-  state.isPlaying = false;
-  if (state.playTimerId !== null) {
-    window.clearInterval(state.playTimerId);
-    state.playTimerId = null;
-  }
-  els.playBtn.textContent = "Play";
-}
-
-function togglePlayback() {
-  if (state.isPlaying) {
-    stopPlayback();
+async function tickRealtime() {
+  if (!state.session) return;
+  const prevIndex = state.currentIndex;
+  await syncToRealClock();
+  if (prevIndex !== state.currentIndex) {
+    await updateView();
   } else {
-    startPlayback();
+    const frame = frameAt(state.currentIndex);
+    if (frame) {
+      const { bestBid, bestAsk } = bestPrices(frame.asks, frame.bids);
+      renderPlaybackMeta(bestBid, bestAsk);
+    }
+    if (state.activeSection === "chart") renderChart();
   }
 }
 
-function stepForward() {
-  stopPlayback();
-  const prev = state.currentIndex;
-  stepToIndex(state.currentIndex + 1);
-  updateView(tradePricesInRange(prev + 1, state.currentIndex));
-}
-
-function stepBackward() {
-  stopPlayback();
-  const prev = state.currentIndex;
-  stepToIndex(state.currentIndex - 1);
-  updateView(tradePricesInRange(state.currentIndex, prev - 1));
+function startRealtimeClock() {
+  if (state.realtimeTimerId !== null) {
+    window.clearInterval(state.realtimeTimerId);
+  }
+  state.realtimeTimerId = window.setInterval(() => {
+    tickRealtime().catch((error) => {
+      console.error(error);
+      showError(`Runtime error: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }, 100);
 }
 
 async function handleBoardOrder(event) {
   const button = event.target.closest("button[data-side][data-price]");
-  if (!button || !state.session) {
-    return;
-  }
-  await ensureChunkForIndex(state.currentIndex);
+  if (!button || !state.session) return;
+  event.preventDefault();
+  const chunk = await ensureChunkForIndex(state.currentIndex);
+  if (!chunk) return;
   const frame = frameAt(state.currentIndex);
-  if (!frame) {
+  if (!frame) return;
+  const orderSig = `${state.currentIndex}:${button.dataset.side}:${button.dataset.price}`;
+  const nowMs = performance.now();
+  if (state.lastBoardOrderSig === orderSig && nowMs - state.lastBoardOrderAtMs < 250) {
     return;
   }
+  state.lastBoardOrderSig = orderSig;
+  state.lastBoardOrderAtMs = nowMs;
   const { bestBid, bestAsk } = bestPrices(frame.asks, frame.bids);
-  engine.onMarket({
-    timeMicro: state.session.playbackTimes[state.currentIndex],
+  engine.syncQuote({
     bestBid,
     bestAsk,
-    lastPrice: state.session.prices[state.currentIndex],
-    eventType: state.session.events[state.currentIndex],
-    tradePrice: state.session.prices[state.currentIndex],
+    lastPrice: frame.price,
+    eventType: frame.event,
+    tradePrice: frame.price,
   });
-  engine.placeLimit(button.dataset.side, Number(button.dataset.price), state.session.playbackTimes[state.currentIndex]);
-  await updateView();
-}
-
-async function submitLimitOrder(side, price) {
-  if (!state.session || !Number.isFinite(price) || price <= 0) {
-    return;
-  }
-  await ensureChunkForIndex(state.currentIndex);
-  const frame = frameAt(state.currentIndex);
-  if (!frame) {
-    return;
-  }
-  const { bestBid, bestAsk } = bestPrices(frame.asks, frame.bids);
-  engine.onMarket({
-    timeMicro: state.session.playbackTimes[state.currentIndex],
-    bestBid,
-    bestAsk,
-    lastPrice: state.session.prices[state.currentIndex],
-    eventType: state.session.events[state.currentIndex],
-    tradePrice: state.session.prices[state.currentIndex],
-  });
-  engine.placeLimit(side, Number(price), state.session.playbackTimes[state.currentIndex]);
-  await updateView();
-}
-
-async function chartSeekFromEvent(event) {
-  if (!state.session || state.session.tradeTimes.length === 0) {
-    return;
-  }
-  const rect = els.chartCanvas.getBoundingClientRect();
-  const x = Math.max(0, Math.min(event.clientX - rect.left, rect.width));
-  const ratio = rect.width > 0 ? x / rect.width : 0;
-  const firstTime = state.session.tradeTimes[0];
-  const lastTime = state.session.tradeTimes[state.session.tradeTimes.length - 1];
-  const target = Math.round(firstTime + (lastTime - firstTime) * ratio);
-  stopPlayback();
-  processUntilTime(target);
+  const orderSound = engine.placeLimit(button.dataset.side, Number(button.dataset.price), state.virtualTime);
+  beep(orderSound);
   await updateView();
 }
 
 function beep(kind) {
-  if (!state.audioEnabled) {
-    return;
+  const src = soundPaths[kind];
+  if (!src || !audioUnlocked) return;
+  let audio = soundPool.get(kind);
+  if (!audio) {
+    audio = new Audio(src);
+    audio.preload = "auto";
+    soundPool.set(kind, audio);
   }
-  const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  if (!AudioCtx) {
-    return;
-  }
-  if (!audioState.context) {
-    audioState.context = new AudioCtx();
-  }
-  if (audioState.context.state === "suspended") {
-    audioState.context.resume();
-  }
+  audio.pause();
+  audio.currentTime = 0;
+  audio.volume = soundVolumes[kind] ?? 0.1;
+  audio.play().catch(() => {});
+}
 
-  const config = {
-    place: { frequency: 720, duration: 0.08, type: "square" },
-    fill: { frequency: 540, duration: 0.12, type: "triangle" },
-    profit: { frequency: 860, duration: 0.18, type: "sine" },
-    loss: { frequency: 220, duration: 0.2, type: "sawtooth" },
-  }[kind];
-  if (!config) {
-    return;
-  }
+function preferSound(currentKind, nextKind) {
+  if (!nextKind) return currentKind;
+  if (!currentKind) return nextKind;
+  return (soundPriority[nextKind] ?? -1) >= (soundPriority[currentKind] ?? -1) ? nextKind : currentKind;
+}
 
-  const now = audioState.context.currentTime;
-  const oscillator = audioState.context.createOscillator();
-  const gain = audioState.context.createGain();
-  oscillator.type = config.type;
-  oscillator.frequency.setValueAtTime(config.frequency, now);
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.05, now + 0.01);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + config.duration);
-  oscillator.connect(gain);
-  gain.connect(audioState.context.destination);
-  oscillator.start(now);
-  oscillator.stop(now + config.duration + 0.02);
+async function unlockAudio() {
+  if (audioUnlocked) return;
+  for (const [kind, src] of Object.entries(soundPaths)) {
+    let audio = soundPool.get(kind);
+    if (!audio) {
+      audio = new Audio(src);
+      audio.preload = "auto";
+      soundPool.set(kind, audio);
+    }
+    audio.pause();
+    audio.currentTime = 0;
+    audio.volume = soundVolumes[kind] ?? 0.1;
+    audio.load();
+  }
+  audioUnlocked = true;
 }
 
 function bindEvents() {
-  els.fileSelect.addEventListener("change", async (event) => {
-    await loadSession(event.target.value);
-  });
-  els.playBtn.addEventListener("click", togglePlayback);
-  els.backBtn.addEventListener("click", stepBackward);
-  els.forwardBtn.addEventListener("click", stepForward);
-  els.speedBtn.addEventListener("click", () => {
-    state.playSpeed = state.playSpeed === 5 ? 1 : 5;
-    els.speedBtn.textContent = state.playSpeed === 5 ? "x1" : "x5";
-    updateView();
-  });
-  els.audioBtn.addEventListener("click", () => {
-    state.audioEnabled = !state.audioEnabled;
-    els.audioBtn.textContent = state.audioEnabled ? "Audio On" : "Audio Off";
-  });
-  els.seekSlider.addEventListener("input", (event) => {
-    stopPlayback();
-    stepToIndex(Number(event.target.value));
-    updateView();
-  });
-  els.boardBody.addEventListener("click", handleBoardOrder);
-  els.placeLimitBtn.addEventListener("click", async () => {
-    await submitLimitOrder(els.orderSide.value, Number(els.orderPrice.value));
-  });
-  els.crossBuyBtn.addEventListener("click", async () => {
-    const bestAsk = Number(els.bestAsk.textContent.replace(/,/g, ""));
-    if (Number.isFinite(bestAsk) && bestAsk > 0) {
-      await submitLimitOrder("BUY", bestAsk);
-    }
-  });
-  els.crossSellBtn.addEventListener("click", async () => {
-    const bestBid = Number(els.bestBid.textContent.replace(/,/g, ""));
-    if (Number.isFinite(bestBid) && bestBid > 0) {
-      await submitLimitOrder("SELL", bestBid);
-    }
+  els.boardBody.addEventListener("click", async (event) => {
+    await unlockAudio().catch(() => {});
+    await handleBoardOrder(event);
   });
   els.cancelOrdersBtn.addEventListener("click", () => {
     engine.cancelAll();
     updateView();
   });
-  els.resetAccountBtn.addEventListener("click", () => {
-    engine.reset();
-    updateView();
+  els.chartLine?.addEventListener("click", () => {
+    state.chartMode = state.chartMode === "line" ? "candle" : "line";
+    els.chartLine.textContent = state.chartMode === "line" ? "通常" : "ローソク";
+    updatePanels();
+    renderChart();
+  });
+  els.tf1m?.addEventListener("click", () => {
+    state.chartTimeframe = "1m";
+    state.chartBarsVisible = 20;
+    updatePanels();
+    renderChart();
+  });
+  els.tf5m?.addEventListener("click", () => {
+    state.chartTimeframe = "5m";
+    state.chartBarsVisible = 20;
+    updatePanels();
+    renderChart();
+  });
+  els.zoomIn?.addEventListener("click", () => {
+    state.chartBarsVisible = Math.max(8, Math.floor(state.chartBarsVisible * 0.7));
+    renderChart();
+  });
+  els.zoomOut?.addEventListener("click", () => {
+    state.chartBarsVisible = Math.min(240, Math.ceil(state.chartBarsVisible * 1.4));
+    renderChart();
   });
   els.showBoard.addEventListener("click", () => {
     state.activeSection = "board";
@@ -1030,9 +960,7 @@ function bindEvents() {
       swipeActive = true;
     });
     els.sectionViewport.addEventListener("pointerup", (event) => {
-      if (!swipeActive) {
-        return;
-      }
+      if (!swipeActive) return;
       const dx = event.clientX - swipeStartX;
       if (Math.abs(dx) > 40) {
         const sectionOrder = ["board", "chart", "trades"];
@@ -1040,9 +968,7 @@ function bindEvents() {
         const next = dx < 0 ? Math.min(sectionOrder.length - 1, current + 1) : Math.max(0, current - 1);
         state.activeSection = sectionOrder[next];
         updatePanels();
-        if (state.activeSection === "chart") {
-          renderChart();
-        }
+        if (state.activeSection === "chart") renderChart();
       }
       swipeActive = false;
     });
@@ -1051,73 +977,30 @@ function bindEvents() {
     });
   }
 
-  let draggingChart = false;
-  if (els.chartCanvas) {
-    els.chartCanvas.addEventListener("pointerdown", (event) => {
-      draggingChart = true;
-      chartSeekFromEvent(event);
-    });
-    els.chartCanvas.addEventListener("pointermove", (event) => {
-      if (draggingChart) {
-        chartSeekFromEvent(event);
-      }
-    });
-  }
-  window.addEventListener("pointerup", () => {
-    draggingChart = false;
-  });
-
-  window.addEventListener("keydown", (event) => {
-    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) {
-      return;
-    }
-    if (event.code === "Space") {
-      event.preventDefault();
-      togglePlayback();
-    } else if (event.key === "ArrowRight") {
-      event.preventDefault();
-      stepForward();
-    } else if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      stepBackward();
-    }
-  });
-
   window.addEventListener("resize", () => {
     updatePanels();
     renderChart();
   });
 }
 
-async function updateView(highlightPrices = null) {
+async function updateView() {
   try {
-    const session = state.session;
-    if (!session) {
-      return;
-    }
-
+    if (!state.session) return;
     await ensureChunkForIndex(state.currentIndex);
     const frame = frameAt(state.currentIndex);
-    if (!frame) {
-      return;
-    }
-
+    if (!frame) return;
     const { bestBid, bestAsk } = bestPrices(frame.asks, frame.bids);
-    engine.onMarket({
-      timeMicro: session.playbackTimes[state.currentIndex],
+    const marketSound = engine.onMarket({
+      timeMicro: state.virtualTime,
       bestBid,
       bestAsk,
-      lastPrice: session.prices[state.currentIndex],
-      eventType: session.events[state.currentIndex],
-      tradePrice: session.prices[state.currentIndex],
+      lastPrice: frame.price,
+      eventType: frame.event,
+      tradePrice: frame.price,
     });
-
-    const prices = highlightPrices ?? new Set(
-      session.events[state.currentIndex] === 2 ? [session.prices[state.currentIndex]] : []
-    );
-
-    renderBoard(frame, prices);
-    renderTrades();
+    beep(marketSound);
+    renderBoard(frame, frame.event === 2 ? frame.price : 0);
+    await renderTrades();
     renderTrading();
     renderChart();
     renderPlaybackMeta(bestBid, bestAsk);

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import mimetypes
 from dataclasses import dataclass
 from functools import lru_cache
 from http import HTTPStatus
@@ -39,7 +40,11 @@ class SessionStore:
 
     def files(self) -> list[FileEntry]:
         items: list[FileEntry] = []
-        for path in sorted(self.data_dir.glob("*.parquet"), reverse=True):
+        for path in sorted(self.data_dir.glob("*.parquet"), key=lambda item: item.stat().st_mtime, reverse=True):
+            if path.name.endswith(".chart.parquet"):
+                continue
+            if not path.with_suffix(".chart.parquet").exists():
+                continue
             stat = path.stat()
             items.append(
                 FileEntry(
@@ -51,71 +56,99 @@ class SessionStore:
             )
         return items
 
-    @lru_cache(maxsize=8)
-    def load_raw(self, filename: str) -> dict[str, Any]:
+    def resolve_source(self, filename: str) -> Path:
         path = (self.data_dir / filename).resolve()
         if path.parent != self.data_dir.resolve() or not path.exists() or path.suffix.lower() != ".parquet":
             raise FileNotFoundError(filename)
+        if path.name.endswith(".chart.parquet"):
+            raise FileNotFoundError(filename)
+        return path
 
-        df = pd.read_parquet(path, columns=self.columns)
-        asks = []
-        bids = []
-        for i in range(1, 11):
-            asks.append(df[[f"Ask{i}_P", f"Ask{i}_Q", f"Ask{i}_O"]].astype("int64").to_numpy())
-            bids.append(df[[f"Bid{i}_P", f"Bid{i}_Q", f"Bid{i}_O"]].astype("int64").to_numpy())
+    def resolve_chart(self, filename: str) -> Path:
+        source = self.resolve_source(filename)
+        chart_path = source.with_suffix(".chart.parquet")
+        if not chart_path.exists():
+            raise FileNotFoundError(chart_path.name)
+        return chart_path
 
+    @lru_cache(maxsize=8)
+    def load_frame(self, filename: str) -> pd.DataFrame:
+        path = self.resolve_source(filename)
+        return pd.read_parquet(path, columns=self.columns)
+
+    @lru_cache(maxsize=8)
+    def load_chart_frame(self, filename: str) -> pd.DataFrame:
+        path = self.resolve_chart(filename)
+        return pd.read_parquet(path)
+
+    @lru_cache(maxsize=16)
+    def chunk_meta(self, filename: str) -> dict[str, Any]:
+        frame = self.load_frame(filename)
+        times = frame["Time"].astype("int64").to_numpy()
+        chunk_first_times: list[int] = []
+        chunk_last_times: list[int] = []
+        for start in range(0, len(frame.index), CHUNK_SIZE):
+            end = min(len(frame.index), start + CHUNK_SIZE)
+            chunk_first_times.append(int(times[start]))
+            chunk_last_times.append(int(times[end - 1]))
         return {
             "name": filename,
-            "row_count": len(df.index),
-            "times": df["Time"].astype("int64").to_numpy(),
-            "events": df["Event"].astype("int64").to_numpy(),
-            "prices": df["Price"].astype("int64").to_numpy(),
-            "sizes": df["Size"].astype("int64").to_numpy(),
-            "directions": df["Direction"].astype("int64").to_numpy(),
-            "asks": asks,
-            "bids": bids,
+            "rowCount": len(frame.index),
+            "chunkSize": CHUNK_SIZE,
+            "firstTime": int(times[0]) if len(times) else 0,
+            "lastTime": int(times[-1]) if len(times) else 0,
+            "chunkFirstTimes": chunk_first_times,
+            "chunkLastTimes": chunk_last_times,
         }
 
     def session_summary(self, filename: str) -> dict[str, Any]:
-        raw = self.load_raw(filename)
-        events = raw["events"]
-        trade_indices = [i for i, event in enumerate(events.tolist()) if int(event) == 2]
-        trade_times = raw["times"][trade_indices].tolist() if trade_indices else []
-        trade_prices = raw["prices"][trade_indices].tolist() if trade_indices else []
-        return {
-            "name": raw["name"],
-            "rowCount": raw["row_count"],
-            "chunkSize": CHUNK_SIZE,
-            "times": raw["times"].tolist(),
-            "events": events.tolist(),
-            "prices": raw["prices"].tolist(),
-            "sizes": raw["sizes"].tolist(),
-            "directions": raw["directions"].tolist(),
-            "tradeIndices": trade_indices,
-            "tradeTimes": trade_times,
-            "tradePrices": trade_prices,
-        }
+        summary = dict(self.chunk_meta(filename))
+        chart = self.chart_data(filename)
+        summary["chart"] = chart
+        return summary
+
+    def chart_data(self, filename: str) -> dict[str, Any]:
+        frame = self.load_chart_frame(filename)
+        payload: dict[str, Any] = {}
+        for timeframe, group in frame.groupby("Timeframe", sort=False):
+            ordered = group.sort_values("BucketTime")
+            payload[str(timeframe)] = {
+                "bucketTimes": ordered["BucketTime"].astype("int64").tolist(),
+                "opens": ordered["Open"].astype("int64").tolist(),
+                "highs": ordered["High"].astype("int64").tolist(),
+                "lows": ordered["Low"].astype("int64").tolist(),
+                "closes": ordered["Close"].astype("int64").tolist(),
+                "volumes": ordered["Volume"].astype("int64").tolist(),
+                "trades": ordered["Trades"].astype("int64").tolist(),
+            }
+        return payload
 
     def session_chunk(self, filename: str, chunk_index: int) -> dict[str, Any]:
-        raw = self.load_raw(filename)
+        frame = self.load_frame(filename)
         start = max(0, int(chunk_index) * CHUNK_SIZE)
-        end = min(raw["row_count"], start + CHUNK_SIZE)
-        ask_rows = []
-        bid_rows = []
-        for row in range(start, end):
-          ask_levels = []
-          bid_levels = []
-          for level in range(10):
-              ask_levels.append(raw["asks"][level][row].tolist())
-              bid_levels.append(raw["bids"][level][row].tolist())
-          ask_rows.append(ask_levels)
-          bid_rows.append(bid_levels)
+        end = min(len(frame.index), start + CHUNK_SIZE)
+        chunk = frame.iloc[start:end]
+        asks: list[list[list[int]]] = []
+        bids: list[list[list[int]]] = []
+        for _, row in chunk.iterrows():
+            ask_levels = []
+            bid_levels = []
+            for level in range(1, 11):
+                ask_levels.append([int(row[f"Ask{level}_P"]), int(row[f"Ask{level}_Q"]), int(row[f"Ask{level}_O"])])
+                bid_levels.append([int(row[f"Bid{level}_P"]), int(row[f"Bid{level}_Q"]), int(row[f"Bid{level}_O"])])
+            asks.append(ask_levels)
+            bids.append(bid_levels)
         return {
             "chunkIndex": int(chunk_index),
             "start": start,
             "end": end,
-            "asks": ask_rows,
-            "bids": bid_rows,
+            "times": chunk["Time"].astype("int64").tolist(),
+            "events": chunk["Event"].astype("int64").tolist(),
+            "prices": chunk["Price"].astype("int64").tolist(),
+            "sizes": chunk["Size"].astype("int64").tolist(),
+            "directions": chunk["Direction"].astype("int64").tolist(),
+            "asks": asks,
+            "bids": bids,
         }
 
 
@@ -128,6 +161,30 @@ class BoardGameHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path.startswith("/voice/"):
+            rel_path = parsed.path.removeprefix("/voice/")
+            voice_roots = [
+                Path(__file__).resolve().parent / "voice",
+                self.session_store.data_dir / "voice",
+            ]
+            voice_path = None
+            for root in voice_roots:
+                candidate = (root / rel_path).resolve()
+                if candidate.parent == root.resolve() and candidate.exists():
+                    voice_path = candidate
+                    break
+            if voice_path is None:
+                self.send_error(HTTPStatus.NOT_FOUND, "voice not found")
+                return
+            content_type = mimetypes.guess_type(str(voice_path))[0] or "application/octet-stream"
+            body = voice_path.read_bytes()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if parsed.path == "/api/files":
             payload = [
                 {
@@ -163,6 +220,18 @@ class BoardGameHandler(SimpleHTTPRequestHandler):
                 self._send_json(self.session_store.session_chunk(filename, chunk_index))
             except FileNotFoundError:
                 self.send_error(HTTPStatus.NOT_FOUND, "parquet not found")
+            return
+
+        if parsed.path == "/api/chart-data":
+            params = parse_qs(parsed.query)
+            filename = (params.get("file") or [""])[0]
+            if not filename:
+                self.send_error(HTTPStatus.BAD_REQUEST, "file query is required")
+                return
+            try:
+                self._send_json(self.session_store.chart_data(filename))
+            except FileNotFoundError:
+                self.send_error(HTTPStatus.NOT_FOUND, "chart parquet not found")
             return
 
         if parsed.path == "/api/health":

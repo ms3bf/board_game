@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <title>Board Game Web</title>
+    <title>デモトレ</title>
     <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
@@ -11,39 +11,27 @@
       <header class="app-header">
         <div class="header-top">
           <div class="brand-block">
-            <p class="brand-label">Board Replay</p>
-            <strong id="meta-file" class="brand-file">-</strong>
-          </div>
-          <div class="header-actions">
-            <label class="file-picker">
-              <span>Replay</span>
-              <select id="file-select"></select>
-            </label>
+            <p class="brand-label">デモトレ</p>
           </div>
         </div>
 
         <section class="quote-strip">
           <div class="quote-main">
             <div class="quote-price-row">
-              <strong id="last-trade" class="quote-price">-</strong>
+              <strong id="headline-cash" class="quote-price">-</strong>
               <span class="quote-delta">JPY</span>
+              <span class="live-pill">LIVE</span>
             </div>
             <div class="quote-meta-row">
               <span id="meta-time">--:--:--</span>
-              <span id="meta-index">0 / 0</span>
-            </div>
-          </div>
-          <div class="quote-side">
-            <div class="quote-box">
-              <span>Best Ask</span>
-              <strong id="best-ask">-</strong>
-            </div>
-            <div class="quote-box">
-              <span>Best Bid</span>
-              <strong id="best-bid">-</strong>
             </div>
           </div>
         </section>
+        <div class="hidden-metrics" aria-hidden="true">
+          <span id="best-ask">-</span>
+          <span id="best-bid">-</span>
+          <span id="speed-label">LIVE</span>
+        </div>
 
         <nav class="section-tabs">
           <button id="show-board" class="section-tab active" type="button">板</button>
@@ -55,36 +43,30 @@
       <main class="app-main">
         <section id="error-banner" class="error-banner hidden"></section>
 
-        <section class="replay-bar">
-          <div class="seek-wrap">
-            <input id="seek-slider" type="range" min="0" max="0" value="0" step="1">
-          </div>
-          <div class="control-row">
-            <button id="back-btn" class="chip-button" type="button">Back</button>
-            <button id="play-btn" class="action-button primary" type="button">Play</button>
-            <button id="forward-btn" class="chip-button" type="button">Forward</button>
-            <button id="speed-btn" class="chip-button accent" type="button">x5</button>
-            <button id="audio-btn" class="chip-button" type="button">Audio</button>
-          </div>
-        </section>
-
         <section class="viewport-shell">
           <div id="section-viewport" class="section-viewport">
             <div id="section-track" class="section-track">
               <section id="board-panel" class="view-panel">
                 <div class="board-head">
-                  <div class="board-mode">複数気配</div>
-                  <div class="board-mode-side">最良気配基準の即時約定対応</div>
+                  <div class="board-mode">24H Live Board</div>
+                  <div class="board-mode-side">現在時刻以下の最新状態を表示</div>
                 </div>
                 <div class="board-wrap">
                   <table class="board-table">
+                    <colgroup>
+                      <col class="col-order">
+                      <col class="col-qty">
+                      <col class="col-price">
+                      <col class="col-qty">
+                      <col class="col-order">
+                    </colgroup>
                     <thead>
                       <tr>
-                        <th>AskO</th>
-                        <th>AskQ</th>
-                        <th>Price</th>
-                        <th>BidQ</th>
-                        <th>BidO</th>
+                        <th>売り数量</th>
+                        <th>売注文</th>
+                        <th>価格</th>
+                        <th>買注文</th>
+                        <th>買い数量</th>
                       </tr>
                     </thead>
                     <tbody id="board-body"></tbody>
@@ -93,6 +75,17 @@
               </section>
 
               <section id="chart-panel" class="view-panel">
+                <div class="chart-toolbar">
+                  <div class="chart-mode-group">
+                    <button id="chart-line" class="chip-button chart-chip active" type="button">通常</button>
+                    <button id="tf-1m" class="chip-button chart-chip active" type="button">1分足</button>
+                    <button id="tf-5m" class="chip-button chart-chip" type="button">5分足</button>
+                  </div>
+                  <div class="chart-mode-group">
+                    <button id="zoom-out" class="chip-button chart-chip" type="button">-</button>
+                    <button id="zoom-in" class="chip-button chart-chip" type="button">+</button>
+                  </div>
+                </div>
                 <canvas id="chart-canvas" width="1000" height="560"></canvas>
               </section>
 
@@ -115,53 +108,33 @@
           </div>
         </section>
 
-        <section class="order-dock">
-          <div class="order-grid">
-            <label class="compact-field">
-              <span>Side</span>
-              <select id="order-side">
-                <option value="BUY">BUY</option>
-                <option value="SELL">SELL</option>
-              </select>
-            </label>
-            <label class="compact-field">
-              <span>Limit</span>
-              <input id="order-price" type="number" min="0" step="1" inputmode="numeric">
-            </label>
-            <button id="place-limit-btn" class="action-button secondary" type="button">Place</button>
-            <button id="cross-buy-btn" class="action-button positive" type="button">Cross Buy</button>
-            <button id="cross-sell-btn" class="action-button negative" type="button">Cross Sell</button>
-          </div>
-        </section>
-
         <section id="trading-panel" class="trading-sheet">
           <div class="sheet-head">
-            <strong>Trading</strong>
+            <strong>取引</strong>
             <div class="sheet-actions">
-              <button id="cancel-orders-btn" class="chip-button" type="button">Cancel All</button>
-              <button id="reset-account-btn" class="chip-button" type="button">Reset</button>
+              <button id="cancel-orders-btn" class="chip-button" type="button">注文取消</button>
             </div>
           </div>
 
           <div class="summary-grid">
-            <div class="summary-card"><span>Cash</span><strong id="sum-cash">-</strong></div>
-            <div class="summary-card"><span>Position</span><strong id="sum-pos">-</strong></div>
-            <div class="summary-card"><span>Average</span><strong id="sum-avg">-</strong></div>
-            <div class="summary-card"><span>Realized</span><strong id="sum-real">-</strong></div>
-            <div class="summary-card"><span>Unrealized</span><strong id="sum-unreal">-</strong></div>
-            <div class="summary-card"><span>Equity</span><strong id="sum-equity">-</strong></div>
+            <div class="summary-card"><span>現金</span><strong id="sum-cash">-</strong></div>
+            <div class="summary-card"><span>建玉</span><strong id="sum-pos">-</strong></div>
+            <div class="summary-card"><span>平均</span><strong id="sum-avg">-</strong></div>
+            <div class="summary-card"><span>実現損益</span><strong id="sum-real">-</strong></div>
+            <div class="summary-card"><span>含み損益</span><strong id="sum-unreal">-</strong></div>
+            <div class="summary-card"><span>評価額</span><strong id="sum-equity">-</strong></div>
           </div>
 
           <details class="sheet-details">
-            <summary>Pending Orders</summary>
+            <summary>注文一覧</summary>
             <div class="table-wrap">
               <table class="data-table">
                 <thead>
                   <tr>
                     <th>ID</th>
-                    <th>Side</th>
-                    <th>Limit</th>
-                    <th>Placed</th>
+                    <th>売買</th>
+                    <th>指値</th>
+                    <th>時刻</th>
                   </tr>
                 </thead>
                 <tbody id="pending-body"></tbody>
@@ -170,21 +143,21 @@
           </details>
 
           <details class="sheet-details">
-            <summary>Trade Log</summary>
+            <summary>取引履歴</summary>
             <div class="table-wrap">
               <table class="data-table dense">
                 <thead>
                   <tr>
-                    <th>Time</th>
-                    <th>Type</th>
-                    <th>Side</th>
-                    <th>Price</th>
-                    <th>Lot</th>
-                    <th>Reason</th>
-                    <th>Pos</th>
-                    <th>Avg</th>
-                    <th>dReal</th>
-                    <th>Realized</th>
+                    <th>時刻</th>
+                    <th>種別</th>
+                    <th>売買</th>
+                    <th>価格</th>
+                    <th>数量</th>
+                    <th>理由</th>
+                    <th>建玉</th>
+                    <th>平均</th>
+                    <th>差額</th>
+                    <th>累計</th>
                   </tr>
                 </thead>
                 <tbody id="log-body"></tbody>
@@ -193,17 +166,13 @@
           </details>
         </section>
 
-        <section class="micro-copy">
-          <p>板を最優先に表示し、必要な補助情報だけを下へ置く構成です。ビューは横スワイプでも切り替えられます。</p>
-        </section>
-
         <section class="empty-state hidden" id="empty-state">
           <h2>No parquet found</h2>
-          <p>`test.parquet` など replay 用の `*.parquet` を配置してから再読み込みしてください。</p>
+          <p>24時間板の parquet をこのディレクトリに置くと自動で候補に出ます。</p>
         </section>
       </main>
     </div>
 
     <script src="./app.js"></script>
   </body>
-  </html>
+</html>

@@ -12,10 +12,14 @@
 !/webapp/
 !/webapp/**
 gui/voice/
+voice/
+webapp/voice/
 
 gui/__pycache__/
 gui/*.py[cod]
 webapp/__pycache__/
 webapp/*.py[cod]
+webapp/_stdout.log
+webapp/_stderr.log
 api/__pycache__/
 api/*.py[cod]
