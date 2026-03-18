@@ -595,9 +595,9 @@ function renderBoard(frame, highlightPrices) {
     rows.push(`
       <tr>
         <td class="ask-order">${fillCell(ask.orderCount)}</td>
-        <td class="ask-qty"><button type="button" data-side="BUY" data-price="${price}" ${ask.qty > 0 ? "" : "disabled"}>${fillCell(ask.qty)}</button></td>
+        <td class="ask-qty"><button type="button" data-side="SELL" data-price="${price}" ${ask.qty > 0 ? "" : "disabled"}>${fillCell(ask.qty)}</button></td>
         <td class="${classes.join(" ")}">${formatInt(price)}</td>
-        <td class="bid-qty"><button type="button" data-side="SELL" data-price="${price}" ${bid.qty > 0 ? "" : "disabled"}>${fillCell(bid.qty)}</button></td>
+        <td class="bid-qty"><button type="button" data-side="BUY" data-price="${price}" ${bid.qty > 0 ? "" : "disabled"}>${fillCell(bid.qty)}</button></td>
         <td class="bid-order">${fillCell(bid.orderCount)}</td>
       </tr>
     `);
