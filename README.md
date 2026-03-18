@@ -1,45 +1,59 @@
 # Board Game
 
-板情報のリプレイ用アプリを置くリポジトリです。
+公開URL: [https://board-game-7criii3bh-bldmassan-7864s-projects.vercel.app/](https://board-game-7criii3bh-bldmassan-7864s-projects.vercel.app/)
 
-現在は既存の PyQt デスクトップ版と、新しく追加する Web アプリ版を管理します。
+板リプレイ風のデモトレ Web アプリです。ブラウザ上で板、チャート、歩み値を見ながら売買シミュレーションができます。
 
-## Contents
+## 重要
 
-- [gui/app.py](/C:/Users/masato/Desktop/板/itayomikun/game/gui/app.py)
-  - 既存のデスクトップ GUI
-- [gui/trade.py](/C:/Users/masato/Desktop/板/itayomikun/game/gui/trade.py)
-  - デスクトップ版の売買まわり
-- [webapp/server.py](/C:/Users/masato/Desktop/板/itayomikun/game/webapp/server.py)
-  - parquet を読み込んで配信する軽量サーバ
-- [webapp/static](/C:/Users/masato/Desktop/板/itayomikun/game/webapp/static)
-  - 板、再生、約定、チャート、売買シミュレーションを持つブラウザ版 UI
+このアプリで再生している板は、実市場のリアルタイム板配信ではありません。
 
-## Run
+- 表示している板と約定は、公開用に生成した疑似板データです
+- 実際の取引所配信や証券会社の気配配信をそのまま表示するものではありません
+- 投資判断や実売買の根拠として使うことは想定していません
 
-Web 版:
+## Web App
+
+- 公開版: [https://board-game-7criii3bh-bldmassan-7864s-projects.vercel.app/](https://board-game-7criii3bh-bldmassan-7864s-projects.vercel.app/)
+- ローカル起動:
 
 ```bash
 python webapp/server.py
 ```
 
-デスクトップ版:
-
-```bash
-python gui/app.py
-```
-
-Windows で Web 版を開く場合:
+- Windows で開く:
 
 ```bat
 webapp\open.bat
 ```
 
-## Data
+## 主な機能
 
-- 既定では repo root の `*.parquet` を自動検出します
-- 別ディレクトリを使う場合は `python webapp/server.py --data-dir <path>` を使います
-- parquet は Git に含めなくても、配置されていれば再生できます
+- 板表示
+- チャート表示
+- 歩み値表示
+- 買い / 売りシミュレーション
+- X 共有
+- 音声フィードバック
+
+## データ構成
+
+- `demo_trade.parquet`
+  - 板・約定の本体データ
+- `demo_trade.chart.parquet`
+  - チャート専用の軽量データ
+
+本番配信では、重い parquet は Blob から読み、フロントは必要な chunk だけ取得する構成です。
+
+## 開発メモ
+
+- Web サーバ: [`webapp/server.py`](/C:/Users/masato/Desktop/板/itayomikun/game/webapp/server.py)
+- Vercel API: [`api/index.py`](/C:/Users/masato/Desktop/板/itayomikun/game/api/index.py)
+- フロント: [`webapp/static/app.js`](/C:/Users/masato/Desktop/板/itayomikun/game/webapp/static/app.js)
+
+## クレジット
+
+- 音声: VOICEVOX ずんだもん
 
 ## License
 
