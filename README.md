@@ -1,6 +1,6 @@
 # Board Game
 
-公開URL: [https://board-game-7criii3bh-bldmassan-7864s-projects.vercel.app/](https://board-game-7criii3bh-bldmassan-7864s-projects.vercel.app/)
+公開URL: https://board-game-omega.vercel.app/
 
 板リプレイ風のデモトレ Web アプリです。ブラウザ上で板、チャート、歩み値を見ながら売買シミュレーションができます。
 
@@ -14,7 +14,7 @@
 
 ## Web App
 
-- 公開版: [https://board-game-7criii3bh-bldmassan-7864s-projects.vercel.app/](https://board-game-7criii3bh-bldmassan-7864s-projects.vercel.app/)
+- 公開版: https://board-game-omega.vercel.app/
 - ローカル起動:
 
 ```bash
